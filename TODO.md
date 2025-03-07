@@ -35,15 +35,15 @@ We're migrating our knowledge graph "memory" from a single JSON file to Elastics
 - [x] Update MCP server to use ES-based library
 - [ ] Create query CLI based on ES library
 - [x] Create admin CLI with management commands
-- [ ] Ensure backward compatibility with existing interfaces
-- [ ] Add new query capabilities not possible with JSON
+- [x] Ensure backward compatibility with existing interfaces
+- [x] Add new query capabilities not possible with JSON
 
 ## Phase 5: Testing and Deployment
-- [ ] Create unit tests for all components
+- [x] Create unit tests for core functionality
 - [ ] Develop integration tests
 - [ ] Measure performance metrics
 - [ ] Document deployment procedures
-- [ ] Create user guides for new features
+- [x] Create user guides for new features
 
 ## Implementation Priorities
 1. **Core Infrastructure**: Docker + ES setup ✅
@@ -52,14 +52,15 @@ We're migrating our knowledge graph "memory" from a single JSON file to Elastics
 4. **Enhanced Search**: Fuzzy search and relevancy ✅
 5. **CLI/Server**: Updated interfaces ✅
 6. **Build Stability**: Fixed TypeScript issues ✅
+7. **Complete CRUD**: Added update and delete operations ✅
 
 ## Next Steps
 - [x] Fix TypeScript linter errors in current implementation (Completed with relaxed TypeScript configuration)
+- [x] Add complete CRUD operations (update and delete for entities and relations)
+- [x] Document the new features and migration process
 - [ ] Refine the type system to be more strict once we have a stable working version
 - [ ] Add proper error handling
-- [ ] Add unit tests for core functionality
 - [ ] Create a query CLI
-- [ ] Document the new features and migration process
 
 ## Future Enhancements
 - Real-time analytics dashboard
