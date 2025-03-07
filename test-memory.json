@@ -1,0 +1,7 @@
+{"type":"entity","name":"John Doe","entityType":"person","observations":["programmer","likes coffee","works remote"]}
+{"type":"entity","name":"Jane Smith","entityType":"person","observations":["manager","likes tea","office worker"]}
+{"type":"entity","name":"React","entityType":"technology","observations":["frontend","javascript library","UI development"]}
+{"type":"entity","name":"Node.js","entityType":"technology","observations":["backend","javascript runtime","server-side"]}
+{"type":"relation","from":"John Doe","to":"React","relationType":"uses"}
+{"type":"relation","from":"John Doe","to":"Node.js","relationType":"uses"}
+{"type":"relation","from":"Jane Smith","to":"React","relationType":"manages project with"} 
