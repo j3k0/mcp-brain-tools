@@ -3,6 +3,7 @@
 import { promises as fs } from 'fs';
 import path from 'path';
 import { KnowledgeGraphClient } from './kg-client.js';
+import { ESEntity, ESRelation } from './es-types.js';
 import { importFromJsonFile, exportToJsonFile } from './json-to-es.js';
 
 // Environment configuration for Elasticsearch
@@ -132,28 +133,49 @@ async function searchGraph(query: string) {
     console.log(`Found ${results.hits.total.value} matches`);
     console.log('');
     
+    // Extract all entities from search results
+    const entities = results.hits.hits
+      .filter(hit => hit._source.type === 'entity')
+      .map(hit => hit._source as ESEntity);
+    
+    // Get entity names for relation lookup
+    const entityNames = entities.map(entity => entity.name);
+    
+    // Get relations between these entities
+    const { relations } = await kgClient.getRelationsForEntities(entityNames);
+    
     // Display each entity
-    const hits = results.hits.hits;
-    hits.forEach((hit, index) => {
-      const score = hit._score.toFixed(2);
-      const source = hit._source;
+    entities.forEach((entity, index) => {
+      const hit = results.hits.hits.find(h => 
+        h._source.type === 'entity' && (h._source as ESEntity).name === entity.name
+      );
+      const score = hit ? hit._score.toFixed(2) : 'N/A';
       
-      if (source.type === 'entity') {
-        console.log(`${index + 1}. ${source.name} (${source.entityType}) [Score: ${score}]`);
-        console.log(`   Observations: ${source.observations.length}`);
-        
-        // Show highlights if available
-        if (hit.highlight) {
-          console.log('   Matches:');
-          Object.entries(hit.highlight).forEach(([field, highlights]) => {
-            highlights.forEach(highlight => {
-              console.log(`   - ${field}: ${highlight}`);
-            });
+      console.log(`${index + 1}. ${entity.name} (${entity.entityType}) [Score: ${score}]`);
+      console.log(`   Observations: ${entity.observations.length}`);
+      
+      // Show highlights if available
+      if (hit && hit.highlight) {
+        console.log('   Matches:');
+        Object.entries(hit.highlight).forEach(([field, highlights]) => {
+          highlights.forEach(highlight => {
+            console.log(`   - ${field}: ${highlight}`);
           });
-        }
-        console.log('');
+        });
       }
+      console.log('');
     });
+    
+    // Display relations if any
+    if (relations.length > 0) {
+      console.log('Relations between these entities:');
+      console.log('====================================');
+      
+      relations.forEach(relation => {
+        console.log(`${relation.from} → ${relation.relationType} → ${relation.to}`);
+      });
+      console.log('');
+    }
     
   } catch (error) {
     console.error('Error searching knowledge graph:', (error as Error).message);
