@@ -352,8 +352,28 @@ async function startServer() {
     
     if (toolName === "create_entities") {
       const entities = params.entities;
-      const createdEntities = [];
       
+      // First, check if any entities already exist
+      const conflictingEntities = [];
+      for (const entity of entities) {
+        const existingEntity = await kgClient.getEntity(entity.name);
+        if (existingEntity) {
+          conflictingEntities.push(entity.name);
+        }
+      }
+      
+      // If there are conflicts, reject the entire operation
+      if (conflictingEntities.length > 0) {
+        return formatResponse({
+          success: false,
+          error: "Entity creation failed: Conflicts detected",
+          conflicts: conflictingEntities,
+          message: "Please use update_entities for modifying existing entities."
+        });
+      }
+      
+      // If no conflicts, proceed with entity creation
+      const createdEntities = [];
       for (const entity of entities) {
         const savedEntity = await kgClient.saveEntity({
           name: entity.name,
@@ -366,6 +386,7 @@ async function startServer() {
       }
       
       return formatResponse({
+        success: true,
         entities: createdEntities.map(e => ({
           name: e.name,
           entityType: e.entityType,
