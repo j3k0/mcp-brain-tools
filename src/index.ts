@@ -304,7 +304,7 @@ async function startServer() {
         },
         {
           name: "get_recent",
-          description: "Get recently accessed entities from knowledge graph (memory)",
+          description: "Get recently accessed entities from knowledge graph (memory). Use it when starting a new conversation.",
           inputSchema: {
             type: "object",
             properties: {
@@ -325,11 +325,16 @@ async function startServer() {
   server.setRequestHandler(CallToolRequestSchema, async (request) => {
     if (DEBUG) {
       console.error('Tool request received:', request.params.name);
+      console.error('Tool request params:', JSON.stringify(request.params));
     }
     
     const toolName = request.params.name;
-    // With inputSchema, parameters are now in params.parameters
-    const params = request.params.parameters as any; // Type assertion to handle the unknown parameters
+    // When using inputSchema, client sends parameters in 'arguments' not 'parameters'
+    const params = request.params.arguments as any; // Type assertion to handle the unknown parameters
+    
+    if (DEBUG) {
+      console.error('Parsed parameters:', JSON.stringify(params));
+    }
     
     if (toolName === "create_entities") {
       const entities = params.entities;
