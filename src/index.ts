@@ -339,10 +339,14 @@ async function startServer() {
     // Helper function to format response for Claude
     const formatResponse = (data: any) => {
       // Convert result to string for text field
-      const resultText = JSON.stringify(data, null, 2);
+      const stringifiedData = JSON.stringify(data, null, 2);
       return {
-        result: data,
-        text: resultText // Required by Claude
+        content: [
+          {
+            type: "text",
+            text: stringifiedData,
+          },
+        ],
       };
     };
     
