@@ -612,9 +612,9 @@ async function startServer() {
       
       // Search with empty query but sort by recency
       const searchParams: ESSearchParams = {
-        query: "", // Empty query matches everything
+        query: "*", // Use wildcard instead of empty query to match all documents
         limit: limit,
-        sortBy: 'recent' // Explicitly cast to the correct type
+        sortBy: 'recent' // Sort by recency
       };
       
       const results = await kgClient.search(searchParams);
@@ -625,7 +625,9 @@ async function startServer() {
         .map((hit: any) => ({
           name: hit._source.name,
           entityType: hit._source.entityType,
-          observations: (hit._source as ESEntity).observations
+          observations: (hit._source as ESEntity).observations,
+          lastWrite: (hit._source as ESEntity).lastWrite, // Include timestamp information
+          lastRead: (hit._source as ESEntity).lastRead
         }));
       
       // Get relations between these entities

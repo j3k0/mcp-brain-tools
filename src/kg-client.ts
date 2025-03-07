@@ -234,22 +234,26 @@ export class KnowledgeGraphClient {
     // Build the query
     const esQuery: any = {
       bool: {
-        must: [
-          // Match on the query
-          {
-            multi_match: {
-              query,
-              fields: ['name^3', 'entityType^2', ...(includeObservations ? ['observations'] : [])],
-              fuzziness: 'AUTO'
-            }
-          }
-        ],
+        must: [],
         filter: [
           // Only match entities, not relations
           { term: { type: 'entity' } }
         ]
       }
     };
+    
+    // Only add multi_match if there's a meaningful query
+    if (query && query !== "*") {
+      esQuery.bool.must.push({
+        multi_match: {
+          query,
+          fields: ['name^3', 'entityType^2', ...(includeObservations ? ['observations'] : [])],
+          fuzziness: 'AUTO'
+        }
+      });
+    }
+    
+    // If query is wildcard "*", we'll match all documents with just the filter
     
     // Add entity type filter if specified
     if (entityTypes && entityTypes.length > 0) {
@@ -280,7 +284,8 @@ export class KnowledgeGraphClient {
     // Add scoring based on sortBy
     if (sortBy === 'recent') {
       queryObj.sort = [
-        { lastRead: { order: 'desc' } },
+        { lastWrite: { order: 'desc' } }, // Sort by lastWrite first (most recently modified)
+        { lastRead: { order: 'desc' } },  // Then by lastRead (most recently accessed)
         '_score'
       ];
     } else if (sortBy === 'importance') {
