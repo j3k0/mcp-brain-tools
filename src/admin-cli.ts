@@ -141,10 +141,47 @@ async function searchGraph(query: string) {
     // Get entity names for relation lookup
     const entityNames = entities.map(entity => entity.name);
     
-    // Get relations between these entities
-    const { relations } = await kgClient.getRelationsForEntities(entityNames);
+    // Create a set of entity names for faster lookup
+    const entityNameSet = new Set(entityNames);
     
-    // Display each entity
+    // Collect all relations where any of our entities are involved
+    const allRelations: ESRelation[] = [];
+    const relatedEntities = new Map<string, ESEntity>();
+    
+    // For each found entity, get all its relations (not just with other found entities)
+    for (const entityName of entityNames) {
+      const { relations } = await kgClient.getRelatedEntities(entityName, 1);
+      
+      for (const relation of relations) {
+        // Add relation if not already added
+        if (!allRelations.some(r => 
+          r.from === relation.from && 
+          r.to === relation.to && 
+          r.relationType === relation.relationType
+        )) {
+          allRelations.push(relation);
+          
+          // Track related entities that weren't in the search results
+          // If 'from' entity is not in our set, fetch and store it
+          if (!entityNameSet.has(relation.from)) {
+            if (!relatedEntities.has(relation.from)) {
+              const entity = await kgClient.getEntity(relation.from);
+              if (entity) relatedEntities.set(relation.from, entity);
+            }
+          }
+          
+          // If 'to' entity is not in our set, fetch and store it
+          if (!entityNameSet.has(relation.to)) {
+            if (!relatedEntities.has(relation.to)) {
+              const entity = await kgClient.getEntity(relation.to);
+              if (entity) relatedEntities.set(relation.to, entity);
+            }
+          }
+        }
+      }
+    }
+    
+    // Display each entity from search results
     entities.forEach((entity, index) => {
       const hit = results.hits.hits.find(h => 
         h._source.type === 'entity' && (h._source as ESEntity).name === entity.name
@@ -167,12 +204,21 @@ async function searchGraph(query: string) {
     });
     
     // Display relations if any
-    if (relations.length > 0) {
-      console.log('Relations between these entities:');
+    if (allRelations.length > 0) {
+      console.log('Relations for these entities:');
       console.log('====================================');
       
-      relations.forEach(relation => {
-        console.log(`${relation.from} → ${relation.relationType} → ${relation.to}`);
+      allRelations.forEach(relation => {
+        // Lookup entity types for more context
+        const fromType = entityNameSet.has(relation.from) 
+          ? entities.find(e => e.name === relation.from)?.entityType 
+          : relatedEntities.get(relation.from)?.entityType || '?';
+          
+        const toType = entityNameSet.has(relation.to) 
+          ? entities.find(e => e.name === relation.to)?.entityType 
+          : relatedEntities.get(relation.to)?.entityType || '?';
+        
+        console.log(`${relation.from} (${fromType}) → ${relation.relationType} → ${relation.to} (${toType})`);
       });
       console.log('');
     }
