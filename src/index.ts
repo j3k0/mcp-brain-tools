@@ -99,6 +99,117 @@ async function startServer() {
   });
 
   server.registerTool({
+    name: "update_entities",
+    description: "Update one or more entities in the knowledge graph",
+    parameters: {
+      type: "object",
+      properties: {
+        entities: {
+          type: "array",
+          items: {
+            type: "object",
+            properties: {
+              name: { type: "string" },
+              entityType: { type: "string" },
+              observations: {
+                type: "array",
+                items: { type: "string" }
+              },
+              isImportant: { type: "boolean" }
+            },
+            required: ["name"]
+          }
+        }
+      },
+      required: ["entities"]
+    },
+    handler: async (params: any) => {
+      const { entities } = params;
+      const updatedEntities = [];
+      const errors = [];
+      
+      for (const entity of entities) {
+        try {
+          // First get the existing entity
+          const existingEntity = await kgClient.getEntity(entity.name);
+          
+          if (!existingEntity) {
+            errors.push({
+              name: entity.name,
+              error: `Entity not found`
+            });
+            continue;
+          }
+          
+          // Update fields that are provided, keep existing values for others
+          const updatedEntity = await kgClient.saveEntity({
+            name: entity.name,
+            entityType: entity.entityType || existingEntity.entityType,
+            observations: entity.observations || existingEntity.observations,
+            isImportant: entity.isImportant !== undefined ? entity.isImportant : existingEntity.isImportant
+          });
+          
+          updatedEntities.push(updatedEntity);
+        } catch (error) {
+          errors.push({
+            name: entity.name,
+            error: (error as Error).message
+          });
+        }
+      }
+      
+      return {
+        entities: updatedEntities.map(e => ({
+          name: e.name,
+          entityType: e.entityType,
+          observations: e.observations,
+          isImportant: e.isImportant
+        })),
+        errors: errors.length > 0 ? errors : undefined
+      };
+    }
+  });
+
+  server.registerTool({
+    name: "delete_entities",
+    description: "Delete one or more entities from the knowledge graph",
+    parameters: {
+      type: "object",
+      properties: {
+        names: {
+          type: "array",
+          items: { type: "string" }
+        }
+      },
+      required: ["names"]
+    },
+    handler: async (params: any) => {
+      const { names } = params;
+      const results = [];
+      
+      for (const name of names) {
+        try {
+          // Delete the entity
+          const success = await kgClient.deleteEntity(name);
+          
+          results.push({
+            name,
+            deleted: success
+          });
+        } catch (error) {
+          results.push({
+            name,
+            deleted: false,
+            error: (error as Error).message
+          });
+        }
+      }
+      
+      return { results };
+    }
+  });
+
+  server.registerTool({
     name: "create_relations",
     description: "Create relations between entities in the knowledge graph",
     parameters: {
@@ -144,6 +255,61 @@ async function startServer() {
           relationType: r.relationType
         }))
       };
+    }
+  });
+
+  server.registerTool({
+    name: "delete_relations",
+    description: "Delete relations between entities in the knowledge graph",
+    parameters: {
+      type: "object",
+      properties: {
+        relations: {
+          type: "array",
+          items: {
+            type: "object",
+            properties: {
+              from: { type: "string" },
+              to: { type: "string" },
+              relationType: { type: "string" }
+            },
+            required: ["from", "to", "relationType"]
+          }
+        }
+      },
+      required: ["relations"]
+    },
+    handler: async (params: any) => {
+      const { relations } = params;
+      const results = [];
+      
+      for (const relation of relations) {
+        try {
+          // Delete the relation
+          const success = await kgClient.deleteRelation(
+            relation.from,
+            relation.to,
+            relation.relationType
+          );
+          
+          results.push({
+            from: relation.from,
+            to: relation.to,
+            relationType: relation.relationType,
+            deleted: success
+          });
+        } catch (error) {
+          results.push({
+            from: relation.from,
+            to: relation.to,
+            relationType: relation.relationType,
+            deleted: false,
+            error: (error as Error).message
+          });
+        }
+      }
+      
+      return { results };
     }
   });
 
