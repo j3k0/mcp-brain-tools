@@ -470,11 +470,9 @@ export class KnowledgeGraphClient {
     
     const relations = result.hits.hits.map((hit: any) => hit._source as ESRelation);
     
-    // Filter to only keep relations between entities in our list
-    const filteredRelations = relations.filter(relation => 
-      entityNames.includes(relation.from) && entityNames.includes(relation.to)
-    );
+    // We don't need to filter relations - we want ALL relations where any of our entities
+    // are involved, either as source or target
     
-    return { relations: filteredRelations };
+    return { relations };
   }
 } 

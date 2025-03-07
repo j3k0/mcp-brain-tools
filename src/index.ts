@@ -174,12 +174,7 @@ async function startServer() {
                   properties: {
                     from: {type: "string", description: "Source entity name"},
                     to: {type: "string", description: "Target entity name"},
-                    type: {type: "string", description: "Relationship type"},
-                    metadata: {
-                      type: "object", 
-                      additionalProperties: true,
-                      description: "Additional relationship metadata"
-                    }
+                    type: {type: "string", description: "Relationship type"}
                   },
                   required: ["from", "to", "type"]
                 }
@@ -216,7 +211,7 @@ async function startServer() {
         },
         {
           name: "search_nodes",
-          description: "Search for entities in knowledge graph (memory) using Elasticsearch query capabilities. Returns matching entities and their relations.",
+          description: "Search for entities in knowledge graph (memory) using Elasticsearch query capabilities. Returns matching entities and their relations. Supports advanced Elasticsearch query syntax including: Boolean operators (AND, OR, NOT), fuzzy matching (~N), proximity searches (\"phrase\"~N), and boosting (^N). Examples: 'JC AND Hoelt' for Boolean AND; 'Thea OR Souad' for Boolean OR; 'Hoelt NOT JC' for Boolean NOT; 'Helt~1' for fuzzy matching; '\"technical issues\"~2' for proximity searches; 'JC^3 Hoelt' for boosting specific terms.",
           inputSchema: {
             type: "object",
             properties: {
