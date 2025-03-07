@@ -5,6 +5,7 @@ import path from 'path';
 import { KnowledgeGraphClient } from './kg-client.js';
 import { ESEntity, ESRelation } from './es-types.js';
 import { importFromJsonFile, exportToJsonFile } from './json-to-es.js';
+import readline from 'readline';
 
 // Environment configuration for Elasticsearch
 const ES_NODE = process.env.ES_NODE || 'http://localhost:9200';
@@ -234,28 +235,33 @@ async function searchGraph(query: string) {
  */
 async function resetIndex() {
   try {
-    // Ask for confirmation
-    const readline = require('readline').createInterface({
+    // Ask for confirmation using a Promise-based approach
+    const rl = readline.createInterface({
       input: process.stdin,
       output: process.stdout
     });
     
-    readline.question('Are you sure you want to delete all data? This cannot be undone. (y/N) ', async (answer: string) => {
-      if (answer.toLowerCase() === 'y') {
-        // Get the client
-        const client = kgClient['client']; // Access the private client property
-        
-        // Delete and recreate the index
-        await client.indices.delete({ index: 'knowledge-graph' });
-        await kgClient.initialize();
-        
-        console.log('Knowledge graph has been reset');
-      } else {
-        console.log('Operation cancelled');
-      }
-      
-      readline.close();
+    // Wrap the question in a Promise
+    const answer = await new Promise<string>((resolve) => {
+      rl.question('Are you sure you want to delete all data? This cannot be undone. (y/N) ', (ans: string) => {
+        resolve(ans);
+        rl.close();
+      });
     });
+    
+    if (answer.toLowerCase() === 'y') {
+      // Get the client
+      const client = kgClient['client']; // Access the private client property
+      
+      // Delete and recreate the index
+      await client.indices.delete({ index: 'knowledge-graph' });
+      await kgClient.initialize();
+      
+      console.log('Knowledge graph has been reset');
+    } else {
+      console.log('Operation cancelled');
+    }
+    
   } catch (error) {
     console.error('Error resetting index:', (error as Error).message);
     process.exit(1);
