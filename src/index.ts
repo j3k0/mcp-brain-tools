@@ -474,14 +474,13 @@ async function startServer() {
       
       const results = await kgClient.search(searchParams);
       
-      // Transform the results to the expected format
+      // Transform the results to the expected format, removing unnecessary fields
       const entities = results.hits.hits
         .filter((hit: any) => hit._source.type === 'entity')
         .map((hit: any) => ({
           name: hit._source.name,
           entityType: hit._source.entityType,
-          observations: (hit._source as ESEntity).observations,
-          lastRead: (hit._source as ESEntity).lastRead
+          observations: (hit._source as ESEntity).observations
         }));
       
       return formatResponse({ entities });
@@ -502,9 +501,7 @@ async function startServer() {
         entities: entities.map(e => ({
           name: e.name,
           entityType: e.entityType,
-          observations: e.observations,
-          lastRead: e.lastRead,
-          isImportant: e.isImportant
+          observations: e.observations
         }))
       });
     }
@@ -562,8 +559,7 @@ async function startServer() {
         entity: {
           name: updatedEntity.name,
           entityType: updatedEntity.entityType,
-          observations: updatedEntity.observations,
-          isImportant: updatedEntity.isImportant
+          observations: updatedEntity.observations
         }
       });
     }
@@ -579,14 +575,13 @@ async function startServer() {
       
       const results = await kgClient.search(searchParams);
       
-      // Transform the results to the expected format
+      // Transform the results to the expected format, removing unnecessary fields
       const entities = results.hits.hits
         .filter((hit: any) => hit._source.type === 'entity')
         .map((hit: any) => ({
           name: hit._source.name,
           entityType: hit._source.entityType,
-          observations: (hit._source as ESEntity).observations,
-          lastRead: (hit._source as ESEntity).lastRead
+          observations: (hit._source as ESEntity).observations
         }));
       
       return formatResponse({ entities });
