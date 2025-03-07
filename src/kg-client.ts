@@ -426,4 +426,50 @@ export class KnowledgeGraphClient {
     
     return result.hits.hits.map((hit: any) => hit._source as (ESEntity | ESRelation));
   }
+
+  /**
+   * Get relations for multiple entities
+   * @param entityNames Array of entity names
+   * @returns Object containing relations between the entities
+   */
+  async getRelationsForEntities(entityNames: string[]): Promise<{
+    relations: ESRelation[]
+  }> {
+    if (!this.initialized) await this.initialize();
+    
+    if (entityNames.length === 0) {
+      return { relations: [] };
+    }
+    
+    // Build query to find all relations where any of the entities are involved
+    const should = [];
+    for (const name of entityNames) {
+      should.push({ term: { from: name } });
+      should.push({ term: { to: name } });
+    }
+    
+    // Search for relations
+    const result = await this.client.search<ESRelation>({
+      index: KG_INDEX,
+      query: {
+        bool: {
+          should,
+          minimum_should_match: 1,
+          filter: [
+            { term: { type: 'relation' } }
+          ]
+        }
+      },
+      size: 200 // Limit the number of relations to keep things manageable
+    });
+    
+    const relations = result.hits.hits.map((hit: any) => hit._source as ESRelation);
+    
+    // Filter to only keep relations between entities in our list
+    const filteredRelations = relations.filter(relation => 
+      entityNames.includes(relation.from) && entityNames.includes(relation.to)
+    );
+    
+    return { relations: filteredRelations };
+  }
 } 

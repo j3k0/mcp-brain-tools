@@ -216,16 +216,16 @@ async function startServer() {
         },
         {
           name: "search_nodes",
-          description: "Search entities in knowledge graph (memory) using Elasticsearch query syntax. Supports boolean operators (AND, OR, NOT), wildcards (*), fuzzy matching (~N), proximity searches (\"phrase\"~N), boosting (^N), field-specific searches (field:value).",
+          description: "Search for entities in knowledge graph (memory) using Elasticsearch query capabilities. Returns matching entities and their relations.",
           inputSchema: {
             type: "object",
             properties: {
               query: {
                 type: "string",
-                description: "Ex: 'important:true', 'name:Alice AND entityType:person', 'observations:meeting~2'"
+                description: "Elasticsearch query (supports boolean operators, wildcards, fuzzy matching)"
               },
               entityTypes: {
-                type: "array", 
+                type: "array",
                 items: {type: "string"},
                 description: "Filter by entity types"
               },
@@ -246,7 +246,7 @@ async function startServer() {
         },
         {
           name: "open_nodes",
-          description: "Get details about specific entities in knowledge graph (memory)",
+          description: "Get details about specific entities in knowledge graph (memory) and their relations",
           inputSchema: {
             type: "object",
             properties: {
@@ -304,13 +304,13 @@ async function startServer() {
         },
         {
           name: "get_recent",
-          description: "Get recently accessed entities from knowledge graph (memory). Use it when starting a new conversation.",
+          description: "Get recently accessed entities from knowledge graph (memory) and their relations",
           inputSchema: {
             type: "object",
             properties: {
               limit: {
                 type: "integer",
-                description: "Max entities to return"
+                description: "Max results (default: 10)"
               }
             },
             additionalProperties: false,
@@ -483,7 +483,18 @@ async function startServer() {
           observations: (hit._source as ESEntity).observations
         }));
       
-      return formatResponse({ entities });
+      // Get relations between these entities
+      const entityNames = entities.map(e => e.name);
+      const { relations } = await kgClient.getRelationsForEntities(entityNames);
+      
+      // Map relations to the expected format
+      const formattedRelations = relations.map(r => ({
+        from: r.from,
+        to: r.to,
+        type: r.relationType
+      }));
+      
+      return formatResponse({ entities, relations: formattedRelations });
     }
     else if (toolName === "open_nodes") {
       const names = params.names;
@@ -497,13 +508,25 @@ async function startServer() {
         }
       }
       
-      return formatResponse({
-        entities: entities.map(e => ({
-          name: e.name,
-          entityType: e.entityType,
-          observations: e.observations
-        }))
-      });
+      // Format entities
+      const formattedEntities = entities.map(e => ({
+        name: e.name,
+        entityType: e.entityType,
+        observations: e.observations
+      }));
+      
+      // Get relations between these entities
+      const entityNames = formattedEntities.map(e => e.name);
+      const { relations } = await kgClient.getRelationsForEntities(entityNames);
+      
+      // Map relations to the expected format
+      const formattedRelations = relations.map(r => ({
+        from: r.from,
+        to: r.to,
+        type: r.relationType
+      }));
+      
+      return formatResponse({ entities: formattedEntities, relations: formattedRelations });
     }
     else if (toolName === "add_observations") {
       const name = params.name;
@@ -584,7 +607,18 @@ async function startServer() {
           observations: (hit._source as ESEntity).observations
         }));
       
-      return formatResponse({ entities });
+      // Get relations between these entities
+      const entityNames = entities.map(e => e.name);
+      const { relations } = await kgClient.getRelationsForEntities(entityNames);
+      
+      // Map relations to the expected format
+      const formattedRelations = relations.map(r => ({
+        from: r.from,
+        to: r.to,
+        type: r.relationType
+      }));
+      
+      return formatResponse({ entities, relations: formattedRelations });
     }
     
     throw new Error(`Unknown tool: ${toolName}`);
