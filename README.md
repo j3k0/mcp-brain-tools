@@ -56,7 +56,8 @@ The knowledge graph system consists of:
 If you have an existing JSON-based knowledge graph, you can import it:
 
 ```bash
-npm run import memory.json
+node dist/admin-cli.js init
+node dist/admin-cli.js import memory.json
 ```
 
 ### Running the MCP Server
@@ -64,7 +65,7 @@ npm run import memory.json
 Start the MCP server that connects to Elasticsearch:
 
 ```bash
-npm run start
+npm start
 ```
 
 ## Configuration
@@ -93,12 +94,39 @@ node dist/admin-cli.js export backup.json
 # Show statistics about the knowledge graph
 node dist/admin-cli.js stats
 
+# Search the knowledge graph with fuzzy matching and relevancy ranking
+node dist/admin-cli.js search "search query"
+
 # Show details about a specific entity
 node dist/admin-cli.js entity "John Smith"
 
 # Reset knowledge graph (delete all data)
 node dist/admin-cli.js reset
+
+# Show help
+node dist/admin-cli.js help
 ```
+
+### Search Examples
+
+The Elasticsearch-backed knowledge graph provides powerful search capabilities:
+
+```bash
+# Basic search
+node dist/admin-cli.js search "cordova plugin"
+
+# Fuzzy search (will find "subscription" even with typo)
+node dist/admin-cli.js search "subscrption"
+
+# Person search
+node dist/admin-cli.js search "Jean"
+```
+
+Search results include:
+- Relevancy scoring
+- Highlighted matches showing where the terms were found
+- Entity types and observation counts
+- Sorted by most relevant first
 
 ## Relevancy Ranking
 
