@@ -7,6 +7,8 @@ import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js"
 import {
   CallToolRequestSchema,
   ListToolsRequestSchema,
+  ListResourcesRequestSchema,
+  ListPromptsRequestSchema
 } from "@modelcontextprotocol/sdk/types.js";
 import { KnowledgeGraphClient } from './kg-client.js';
 import { ESEntity, ESRelation, ESSearchParams } from './es-types.js';
@@ -37,20 +39,37 @@ function formatDate(date: Date = new Date()): string {
 async function startServer() {
   // Initialize the knowledge graph
   await kgClient.initialize();
-  console.log('Elasticsearch Knowledge Graph initialized');
+  // Use stderr for logging, not stdout
+  console.error('Elasticsearch Knowledge Graph initialized');
   
   // Create the MCP server
-  // @ts-ignore
   const server = new Server({
     name: "memory",
     version: "1.0.0",
-  },    {
+  }, {
     capabilities: {
       tools: {},
+      // Add empty resource and prompt capabilities to support list requests
+      resources: {},
+      prompts: {}
     },
   });
   
-  console.log('Starting MCP server...');
+  console.error('Starting MCP server...');
+
+  // Handle resources/list requests (return empty list)
+  server.setRequestHandler(ListResourcesRequestSchema, async () => {
+    return {
+      resources: []
+    };
+  });
+
+  // Handle prompts/list requests (return empty list)
+  server.setRequestHandler(ListPromptsRequestSchema, async () => {
+    return {
+      prompts: []
+    };
+  });
 
   // Register the tools handler to list all available tools
   server.setRequestHandler(ListToolsRequestSchema, async () => {
@@ -524,7 +543,7 @@ async function startServer() {
   // Start the server
   const transport = new StdioServerTransport();
   await server.connect(transport);
-  console.log('MCP server running on stdio');
+  console.error('MCP server running on stdio');
 }
 
 // Startup error handling
