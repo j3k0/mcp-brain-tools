@@ -65,7 +65,9 @@ async function startServer() {
 
   // Handle resources/list requests (return empty list)
   server.setRequestHandler(ListResourcesRequestSchema, async () => {
-    console.error('ListResourcesRequestSchema');
+    if (DEBUG) {
+      console.error('ListResourcesRequestSchema');
+    }
     return {
       resources: []
     };
@@ -73,7 +75,9 @@ async function startServer() {
 
   // Handle prompts/list requests (return empty list)
   server.setRequestHandler(ListPromptsRequestSchema, async () => {
-    console.error('ListPromptsRequestSchema');
+    if (DEBUG) {
+      console.error('ListPromptsRequestSchema');
+    }
     return {
       prompts: []
     };
@@ -85,7 +89,7 @@ async function startServer() {
       tools: [
         {
           name: "create_entities",
-          description: "Create multiple new entities in the knowledge graph",
+          description: "Create entities in knowledge graph (memory)",
           inputSchema: {
             type: "object",
             properties: {
@@ -94,14 +98,14 @@ async function startServer() {
                 items: {
                   type: "object",
                   properties: {
-                    name: {type: "string", description: "The name of the entity"},
-                    entityType: {type: "string", description: "The type of the entity"},
+                    name: {type: "string", description: "Entity name"},
+                    entityType: {type: "string", description: "Entity type"},
                     observations: {
                       type: "array", 
                       items: {type: "string"},
-                      description: "List of observations about this entity"
+                      description: "Observations about this entity"
                     },
-                    isImportant: {type: "boolean", description: "Whether this entity is considered important"}
+                    isImportant: {type: "boolean", description: "Is entity important"}
                   },
                   required: ["name", "entityType"]
                 }
@@ -112,10 +116,9 @@ async function startServer() {
             "$schema": "http://json-schema.org/draft-07/schema#"
           }
         },
-        // Add similar definitions for all other tools
         {
           name: "update_entities",
-          description: "Update one or more entities in the knowledge graph",
+          description: "Update entities in knowledge graph (memory)",
           inputSchema: {
             type: "object",
             properties: {
@@ -143,7 +146,7 @@ async function startServer() {
         },
         {
           name: "delete_entities",
-          description: "Delete one or more entities from the knowledge graph",
+          description: "Delete entities from knowledge graph (memory)",
           inputSchema: {
             type: "object",
             properties: {
@@ -160,7 +163,7 @@ async function startServer() {
         },
         {
           name: "create_relations",
-          description: "Create relations between entities in the knowledge graph",
+          description: "Create relationships between entities in knowledge graph (memory)",
           inputSchema: {
             type: "object",
             properties: {
@@ -169,13 +172,13 @@ async function startServer() {
                 items: {
                   type: "object",
                   properties: {
-                    from: {type: "string", description: "Name of the source entity"},
-                    to: {type: "string", description: "Name of the target entity"},
-                    type: {type: "string", description: "Type of relationship"},
+                    from: {type: "string", description: "Source entity name"},
+                    to: {type: "string", description: "Target entity name"},
+                    type: {type: "string", description: "Relationship type"},
                     metadata: {
                       type: "object", 
                       additionalProperties: true,
-                      description: "Additional metadata about the relationship"
+                      description: "Additional relationship metadata"
                     }
                   },
                   required: ["from", "to", "type"]
@@ -189,7 +192,7 @@ async function startServer() {
         },
         {
           name: "delete_relations",
-          description: "Delete relations between entities in the knowledge graph",
+          description: "Delete relationships from knowledge graph (memory)",
           inputSchema: {
             type: "object",
             properties: {
@@ -213,27 +216,27 @@ async function startServer() {
         },
         {
           name: "search_nodes",
-          description: "Search for entities in the knowledge graph using Elasticsearch query capabilities. The query parameter accepts Elasticsearch Query String syntax including boolean operators (AND, OR, NOT), wildcards (*), fuzzy matching (~N), proximity searches (\"phrase\"~N), boosting (^N), and field-specific searches (field:value).",
+          description: "Search entities in knowledge graph (memory) using Elasticsearch query syntax. Supports boolean operators (AND, OR, NOT), wildcards (*), fuzzy matching (~N), proximity searches (\"phrase\"~N), boosting (^N), field-specific searches (field:value).",
           inputSchema: {
             type: "object",
             properties: {
               query: {
                 type: "string",
-                description: "Search query text. Examples: 'important:true', 'name:Alice AND entityType:person', 'observations:meeting~2'"
+                description: "Ex: 'important:true', 'name:Alice AND entityType:person', 'observations:meeting~2'"
               },
               entityTypes: {
                 type: "array", 
                 items: {type: "string"},
-                description: "Optional filter to only return entities of specific types"
+                description: "Filter by entity types"
               },
               limit: {
                 type: "integer",
-                description: "Maximum number of results to return (default: 10)"
+                description: "Max results (default: 10)"
               },
               sortBy: {
                 type: "string",
                 enum: ["relevance", "recency", "importance"],
-                description: "How to sort results: by relevance to query, by recent updates, or by importance flag"
+                description: "Sort by relevance, recency, or importance"
               }
             },
             required: ["query"],
@@ -243,7 +246,7 @@ async function startServer() {
         },
         {
           name: "open_nodes",
-          description: "Get details about specific entities by name",
+          description: "Get details about specific entities in knowledge graph (memory)",
           inputSchema: {
             type: "object",
             properties: {
@@ -260,18 +263,18 @@ async function startServer() {
         },
         {
           name: "add_observations",
-          description: "Add observations to an existing entity",
+          description: "Add observations to an existing entity in knowledge graph (memory)",
           inputSchema: {
             type: "object",
             properties: {
               name: {
                 type: "string",
-                description: "Name of the entity to update"
+                description: "Entity name"
               },
               observations: {
                 type: "array",
                 items: {type: "string"},
-                description: "New observations to add to the entity"
+                description: "New observations to add"
               }
             },
             required: ["name", "observations"],
@@ -281,17 +284,17 @@ async function startServer() {
         },
         {
           name: "mark_important",
-          description: "Mark an entity as important",
+          description: "Mark entity as important in knowledge graph (memory)",
           inputSchema: {
             type: "object",
             properties: {
               name: {
                 type: "string",
-                description: "Name of the entity to mark as important"
+                description: "Entity name"
               },
               important: {
                 type: "boolean",
-                description: "Whether the entity should be marked as important (true) or not important (false)"
+                description: "Set as important (true) or not (false)"
               }
             },
             required: ["name", "important"],
@@ -301,13 +304,13 @@ async function startServer() {
         },
         {
           name: "get_recent",
-          description: "Get recently accessed entities",
+          description: "Get recently accessed entities from knowledge graph (memory)",
           inputSchema: {
             type: "object",
             properties: {
               limit: {
                 type: "integer",
-                description: "Maximum number of entities to return"
+                description: "Max entities to return"
               }
             },
             additionalProperties: false,
