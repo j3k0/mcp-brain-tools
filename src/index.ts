@@ -336,6 +336,16 @@ async function startServer() {
       console.error('Parsed parameters:', JSON.stringify(params));
     }
     
+    // Helper function to format response for Claude
+    const formatResponse = (data: any) => {
+      // Convert result to string for text field
+      const resultText = JSON.stringify(data, null, 2);
+      return {
+        result: data,
+        text: resultText // Required by Claude
+      };
+    };
+    
     if (toolName === "create_entities") {
       const entities = params.entities;
       const createdEntities = [];
@@ -351,13 +361,13 @@ async function startServer() {
         createdEntities.push(savedEntity);
       }
       
-      return {
+      return formatResponse({
         entities: createdEntities.map(e => ({
           name: e.name,
           entityType: e.entityType,
           observations: e.observations
         }))
-      };
+      });
     }
     else if (toolName === "update_entities") {
       const entities = params.entities;
@@ -381,13 +391,13 @@ async function startServer() {
         updatedEntities.push(updatedEntity);
       }
       
-      return {
+      return formatResponse({
         entities: updatedEntities.map(e => ({
           name: e.name,
           entityType: e.entityType,
           observations: e.observations
         }))
-      };
+      });
     }
     else if (toolName === "delete_entities") {
       const names = params.names;
@@ -399,10 +409,10 @@ async function startServer() {
         results.push({ name, deleted: success });
       }
       
-      return {
+      return formatResponse({
         success: true,
         results
-      };
+      });
     }
     else if (toolName === "create_relations") {
       const relations = params.relations;
@@ -418,13 +428,13 @@ async function startServer() {
         savedRelations.push(savedRelation);
       }
       
-      return {
+      return formatResponse({
         relations: savedRelations.map(r => ({
           from: r.from,
           to: r.to,
           type: r.relationType // Map "relationType" from internal model to "type" in API
         }))
-      };
+      });
     }
     else if (toolName === "delete_relations") {
       const relations = params.relations;
@@ -445,10 +455,10 @@ async function startServer() {
         });
       }
       
-      return {
+      return formatResponse({
         success: true,
         results
-      };
+      });
     }
     else if (toolName === "search_nodes") {
       const searchParams: ESSearchParams = {
@@ -470,7 +480,7 @@ async function startServer() {
           lastRead: (hit._source as ESEntity).lastRead
         }));
       
-      return { entities };
+      return formatResponse({ entities });
     }
     else if (toolName === "open_nodes") {
       const names = params.names;
@@ -484,7 +494,7 @@ async function startServer() {
         }
       }
       
-      return {
+      return formatResponse({
         entities: entities.map(e => ({
           name: e.name,
           entityType: e.entityType,
@@ -492,7 +502,7 @@ async function startServer() {
           lastRead: e.lastRead,
           isImportant: e.isImportant
         }))
-      };
+      });
     }
     else if (toolName === "add_observations") {
       const name = params.name;
@@ -518,13 +528,13 @@ async function startServer() {
         isImportant: entity.isImportant
       });
       
-      return {
+      return formatResponse({
         entity: {
           name: updatedEntity.name,
           entityType: updatedEntity.entityType,
           observations: updatedEntity.observations
         }
-      };
+      });
     }
     else if (toolName === "mark_important") {
       const name = params.name;
@@ -544,14 +554,14 @@ async function startServer() {
         isImportant: important
       });
       
-      return {
+      return formatResponse({
         entity: {
           name: updatedEntity.name,
           entityType: updatedEntity.entityType,
           observations: updatedEntity.observations,
           isImportant: updatedEntity.isImportant
         }
-      };
+      });
     }
     else if (toolName === "get_recent") {
       const limit = params.limit || 10;
@@ -560,7 +570,7 @@ async function startServer() {
       const searchParams: ESSearchParams = {
         query: "", // Empty query matches everything
         limit: limit,
-        sortBy: 'recent' // Assuming this is the correct value for recent sorting
+        sortBy: 'recent' // Explicitly cast to the correct type
       };
       
       const results = await kgClient.search(searchParams);
@@ -575,7 +585,7 @@ async function startServer() {
           lastRead: (hit._source as ESEntity).lastRead
         }));
       
-      return { entities };
+      return formatResponse({ entities });
     }
     
     throw new Error(`Unknown tool: ${toolName}`);
