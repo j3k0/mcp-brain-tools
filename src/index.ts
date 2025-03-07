@@ -315,19 +315,27 @@ async function startServer() {
 
   server.registerTool({
     name: "search_nodes",
-    description: "Search for entities in the knowledge graph using a query string",
+    description: "Search for entities in the knowledge graph using Elasticsearch query capabilities. The query parameter accepts Elasticsearch Query String syntax including boolean operators (AND, OR, NOT), wildcards (*), fuzzy matching (~N), proximity searches (\"phrase\"~N), boosting (^N), and field-specific searches (field:value).",
     parameters: {
       type: "object",
       properties: {
-        query: { type: "string" },
+        query: { 
+          type: "string",
+          description: "Elasticsearch Query String syntax. Examples: 'software AND engineer', 'prog*er', 'programer~1', '\"machine learning\"~3', 'software^2 engineer', 'observations:\"expert\"'."
+        },
         entityTypes: {
           type: "array",
-          items: { type: "string" }
+          items: { type: "string" },
+          description: "Optional filter to limit results to specific entity types (e.g. ['Person', 'Company'])."
         },
-        limit: { type: "number" },
+        limit: { 
+          type: "number", 
+          description: "Maximum number of results to return (default: 10)."
+        },
         sortBy: {
           type: "string",
-          enum: ["relevance", "recent", "importance"]
+          enum: ["relevance", "recent", "importance"],
+          description: "Sorting method: 'relevance' (text match quality), 'recent' (recently accessed), or 'importance' (marked as important)."
         }
       },
       required: ["query"]
