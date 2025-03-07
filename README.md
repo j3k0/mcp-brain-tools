@@ -11,6 +11,7 @@ A scalable knowledge graph implementation for Model Context Protocol (MCP) using
 - **Rich Query API**: Advanced querying capabilities not possible with the previous implementation
 - **Admin Tools**: Management CLI for inspecting and maintaining the knowledge graph
 - **Complete CRUD Operations**: Full create, read, update, and delete capabilities for entities and relations
+- **Elasticsearch Query Support**: Native support for Elasticsearch query DSL for advanced search capabilities
 
 ## Architecture
 
@@ -154,7 +155,7 @@ The MCP server exposes the following tools for interacting with the knowledge gr
 
 | Tool | Description |
 |------|-------------|
-| `search_nodes` | Search for entities using a query string |
+| `search_nodes` | Search for entities using Elasticsearch query capabilities |
 | `open_nodes` | Get details about specific entities by name |
 | `get_recent` | Get recently accessed entities |
 
@@ -211,13 +212,99 @@ The MCP server exposes the following tools for interacting with the knowledge gr
   ]
 }
 
-// Search nodes
+// Search nodes - Basic
 {
   "query": "software engineer",
   "entityTypes": ["Person"],
   "sortBy": "relevance"
 }
 ```
+
+### Advanced Elasticsearch Query Capabilities
+
+The `search_nodes` tool leverages Elasticsearch's powerful query capabilities. While the tool provides a simple interface for basic searches, it also fully supports Elasticsearch's query syntax for advanced usage. Here are some query approaches:
+
+#### Text-Based Queries
+
+The `query` parameter accepts the same text formats as Elasticsearch's Query String Query:
+
+```json
+// Multi-term search with operators
+{
+  "query": "software AND (java OR python) NOT intern",
+  "sortBy": "relevance"
+}
+
+// Wildcard searches
+{
+  "query": "prog*er go*ang",
+  "entityTypes": ["Person"]
+}
+
+// Fuzzy matching
+{
+  "query": "programer~1 arcitecture~2"
+}
+
+// Proximity searches
+{
+  "query": "\"machine learning\"~3"
+}
+
+// Boosting terms
+{
+  "query": "software^2 engineer frontend^0.5"
+}
+```
+
+#### Field-Specific Searches
+
+For targeted field searches, you can specify fields in the query:
+
+```json
+// Search in specific fields
+{
+  "query": "name:John AND entityType:Person",
+  "sortBy": "recent"
+}
+
+// Search observations only
+{
+  "query": "observations:\"machine learning expert\""
+}
+```
+
+#### Complex Sorting
+
+The tool supports sophisticated sorting strategies:
+
+```json
+// Sort by recency
+{
+  "query": "engineer",
+  "sortBy": "recent"
+}
+
+// Sort by importance
+{
+  "query": "engineer",
+  "sortBy": "importance"
+}
+```
+
+#### Elasticsearch Query DSL Support
+
+For power users familiar with Elasticsearch, the internal implementation translates your query into Elasticsearch Query DSL, supporting:
+
+- Multi-match queries with field boosting
+- Function score queries using:
+  - Recency decay functions
+  - Field value factors for read count
+  - Boolean filters for importance flag
+- Term and terms queries for entity type filtering
+- Highlighting with custom tagging
+
+The full power of Elasticsearch's relevance scoring based on TF/IDF and BM25 algorithms is available for more complex search needs.
 
 ## Relevancy Ranking
 
