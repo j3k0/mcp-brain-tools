@@ -1,0 +1,51 @@
+version: '3.8'
+
+services:
+  # Elasticsearch for knowledge graph storage
+  elasticsearch:
+    image: docker.elastic.co/elasticsearch/elasticsearch:8.12.0
+    container_name: kg_elasticsearch
+    environment:
+      - node.name=kg-node-1
+      - cluster.name=kg-cluster
+      - discovery.type=single-node      # For development; use cluster for production
+      - bootstrap.memory_lock=true
+      - "ES_JAVA_OPTS=-Xms512m -Xmx512m"  # Adjust based on your system
+      - xpack.security.enabled=false    # For development; enable in production
+    ulimits:
+      memlock:
+        soft: -1
+        hard: -1
+    volumes:
+      - es_data:/usr/share/elasticsearch/data
+    ports:
+      - "9200:9200"  # REST API
+      - "9300:9300"  # Inter-node communication
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9200"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+    networks:
+      - kg_network
+  
+  # Kibana for visualization and management (optional)
+  kibana:
+    image: docker.elastic.co/kibana/kibana:8.12.0
+    container_name: kg_kibana
+    environment:
+      - ELASTICSEARCH_HOSTS=http://elasticsearch:9200
+    ports:
+      - "5601:5601"
+    depends_on:
+      - elasticsearch
+    networks:
+      - kg_network
+
+volumes:
+  es_data:
+    driver: local
+
+networks:
+  kg_network:
+    driver: bridge 
