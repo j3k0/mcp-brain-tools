@@ -17,6 +17,7 @@ import { ESEntity, ESRelation, ESSearchParams } from './es-types.js';
 const ES_NODE = process.env.ES_NODE || 'http://localhost:9200';
 const ES_USERNAME = process.env.ES_USERNAME;
 const ES_PASSWORD = process.env.ES_PASSWORD;
+const DEBUG = process.env.DEBUG === 'true';
 
 // Configure ES client with authentication if provided
 const esOptions: { node: string; auth?: { username: string; password: string } } = {
@@ -37,10 +38,15 @@ function formatDate(date: Date = new Date()): string {
 
 // Start the MCP server
 async function startServer() {
-  // Initialize the knowledge graph
-  await kgClient.initialize();
-  // Use stderr for logging, not stdout
-  console.error('Elasticsearch Knowledge Graph initialized');
+  try {
+    // Initialize the knowledge graph
+    await kgClient.initialize();
+    // Use stderr for logging, not stdout
+    console.error('Elasticsearch Knowledge Graph initialized');
+  } catch (error) {
+    console.error('Warning: Failed to connect to Elasticsearch:', error.message);
+    console.error('The memory server will still start, but operations requiring Elasticsearch will fail');
+  }
   
   // Create the MCP server
   const server = new Server({
@@ -59,6 +65,7 @@ async function startServer() {
 
   // Handle resources/list requests (return empty list)
   server.setRequestHandler(ListResourcesRequestSchema, async () => {
+    console.error('ListResourcesRequestSchema');
     return {
       resources: []
     };
@@ -66,6 +73,7 @@ async function startServer() {
 
   // Handle prompts/list requests (return empty list)
   server.setRequestHandler(ListPromptsRequestSchema, async () => {
+    console.error('ListPromptsRequestSchema');
     return {
       prompts: []
     };
@@ -73,6 +81,7 @@ async function startServer() {
 
   // Register the tools handler to list all available tools
   server.setRequestHandler(ListToolsRequestSchema, async () => {
+    console.error('ListToolsRequestSchema');
     return {
       tools: [
         {
