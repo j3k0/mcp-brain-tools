@@ -1,3 +1,5 @@
 dist/
 memory.json
 node_modules/
+backup-memory.json
+*.backup.json
