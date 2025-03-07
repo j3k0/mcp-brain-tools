@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
 // @ts-ignore
-import { Server } from "@modelcontextprotocol/sdk";
+import { Server } from "@modelcontextprotocol/sdk/server/index.js";
 // @ts-ignore
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import {
@@ -39,45 +39,248 @@ async function startServer() {
   await kgClient.initialize();
   console.log('Elasticsearch Knowledge Graph initialized');
   
-  // Create and start the MCP server
+  // Create the MCP server
   // @ts-ignore
-  const server = new Server("memory", new StdioServerTransport());
+  const server = new Server({
+    name: "memory",
+    version: "1.0.0",
+  },    {
+    capabilities: {
+      tools: {},
+    },
+  });
   
   console.log('Starting MCP server...');
 
-  // Register tools
-  // @ts-ignore
-  server.registerTool({
-    name: "create_entities",
-    description: "Create one or more entities in the knowledge graph",
-    parameters: {
-      type: "object",
-      properties: {
-        entities: {
-          type: "array",
-          items: {
+  // Register the tools handler to list all available tools
+  server.setRequestHandler(ListToolsRequestSchema, async () => {
+    return {
+      tools: [
+        {
+          name: "create_entities",
+          description: "Create multiple new entities in the knowledge graph",
+          parameters: {
             type: "object",
             properties: {
-              name: { type: "string" },
-              entityType: { type: "string" },
-              observations: {
+              entities: {
                 type: "array",
-                items: { type: "string" }
-              },
-              isImportant: { type: "boolean" }
+                items: {
+                  type: "object",
+                  properties: {
+                    name: { type: "string", description: "The name of the entity" },
+                    entityType: { type: "string", description: "The type of the entity" },
+                    observations: { 
+                      type: "array", 
+                      items: { type: "string" },
+                      description: "List of observations about this entity"
+                    },
+                    isImportant: { type: "boolean", description: "Whether this entity is considered important" }
+                  },
+                  required: ["name", "entityType"]
+                }
+              }
             },
-            required: ["name", "entityType", "observations"]
+            required: ["entities"]
+          }
+        },
+        // Add similar definitions for all other tools
+        {
+          name: "update_entities",
+          description: "Update one or more entities in the knowledge graph",
+          parameters: {
+            type: "object",
+            properties: {
+              entities: {
+                type: "array",
+                items: {
+                  type: "object",
+                  properties: {
+                    name: { type: "string" },
+                    entityType: { type: "string" },
+                    observations: {
+                      type: "array",
+                      items: { type: "string" }
+                    },
+                    isImportant: { type: "boolean" }
+                  },
+                  required: ["name"]
+                }
+              }
+            },
+            required: ["entities"]
+          }
+        },
+        {
+          name: "delete_entities",
+          description: "Delete one or more entities from the knowledge graph",
+          parameters: {
+            type: "object",
+            properties: {
+              names: {
+                type: "array",
+                items: { type: "string" },
+                description: "Names of entities to delete"
+              }
+            },
+            required: ["names"]
+          }
+        },
+        {
+          name: "create_relations",
+          description: "Create relations between entities in the knowledge graph",
+          parameters: {
+            type: "object",
+            properties: {
+              relations: {
+                type: "array",
+                items: {
+                  type: "object",
+                  properties: {
+                    from: { type: "string", description: "Name of the source entity" },
+                    to: { type: "string", description: "Name of the target entity" },
+                    type: { type: "string", description: "Type of relationship" },
+                    metadata: { 
+                      type: "object", 
+                      additionalProperties: true,
+                      description: "Additional metadata about the relationship"
+                    }
+                  },
+                  required: ["from", "to", "type"]
+                }
+              }
+            },
+            required: ["relations"]
+          }
+        },
+        {
+          name: "delete_relations",
+          description: "Delete relations between entities in the knowledge graph",
+          parameters: {
+            type: "object",
+            properties: {
+              relations: {
+                type: "array",
+                items: {
+                  type: "object",
+                  properties: {
+                    from: { type: "string" },
+                    to: { type: "string" },
+                    type: { type: "string" }
+                  },
+                  required: ["from", "to", "type"]
+                }
+              }
+            },
+            required: ["relations"]
+          }
+        },
+        {
+          name: "search_nodes",
+          description: "Search for entities in the knowledge graph using Elasticsearch query capabilities. The query parameter accepts Elasticsearch Query String syntax including boolean operators (AND, OR, NOT), wildcards (*), fuzzy matching (~N), proximity searches (\"phrase\"~N), boosting (^N), and field-specific searches (field:value).",
+          parameters: {
+            type: "object",
+            properties: {
+              query: { 
+                type: "string", 
+                description: "Search query text. Examples: 'important:true', 'name:Alice AND entityType:person', 'observations:meeting~2'" 
+              },
+              entityTypes: { 
+                type: "array", 
+                items: { type: "string" },
+                description: "Optional filter to only return entities of specific types" 
+              },
+              limit: { 
+                type: "integer", 
+                description: "Maximum number of results to return (default: 10)" 
+              },
+              sortBy: { 
+                type: "string", 
+                enum: ["relevance", "recency", "importance"],
+                description: "How to sort results: by relevance to query, by recent updates, or by importance flag" 
+              }
+            },
+            required: ["query"]
+          }
+        },
+        {
+          name: "open_nodes",
+          description: "Get details about specific entities by name",
+          parameters: {
+            type: "object",
+            properties: {
+              names: {
+                type: "array",
+                items: { type: "string" },
+                description: "Names of entities to retrieve"
+              }
+            },
+            required: ["names"]
+          }
+        },
+        {
+          name: "add_observations",
+          description: "Add observations to an existing entity",
+          parameters: {
+            type: "object",
+            properties: {
+              name: { 
+                type: "string",
+                description: "Name of the entity to update"
+              },
+              observations: { 
+                type: "array", 
+                items: { type: "string" },
+                description: "New observations to add to the entity"
+              }
+            },
+            required: ["name", "observations"]
+          }
+        },
+        {
+          name: "mark_important",
+          description: "Mark an entity as important",
+          parameters: {
+            type: "object",
+            properties: {
+              name: { 
+                type: "string",
+                description: "Name of the entity to mark as important"
+              },
+              important: { 
+                type: "boolean",
+                description: "Whether the entity should be marked as important (true) or not important (false)"
+              }
+            },
+            required: ["name", "important"]
+          }
+        },
+        {
+          name: "get_recent",
+          description: "Get recently accessed entities",
+          parameters: {
+            type: "object",
+            properties: {
+              limit: { 
+                type: "integer",
+                description: "Maximum number of entities to return"
+              }
+            }
           }
         }
-      },
-      required: ["entities"]
-    },
-    handler: async (params: any) => {
-      const { entities } = params;
+      ]
+    };
+  });
+  
+  // Register the call tool handler to handle tool executions
+  server.setRequestHandler(CallToolRequestSchema, async (request) => {
+    const toolName = request.params.name;
+    const params = request.params.parameters as any; // Type assertion to handle the unknown parameters
+    
+    if (toolName === "create_entities") {
+      const entities = params.entities;
       const createdEntities = [];
       
       for (const entity of entities) {
-        // Save each entity
         const savedEntity = await kgClient.saveEntity({
           name: entity.name,
           entityType: entity.entityType,
@@ -96,431 +299,103 @@ async function startServer() {
         }))
       };
     }
-  });
-
-  server.registerTool({
-    name: "update_entities",
-    description: "Update one or more entities in the knowledge graph",
-    parameters: {
-      type: "object",
-      properties: {
-        entities: {
-          type: "array",
-          items: {
-            type: "object",
-            properties: {
-              name: { type: "string" },
-              entityType: { type: "string" },
-              observations: {
-                type: "array",
-                items: { type: "string" }
-              },
-              isImportant: { type: "boolean" }
-            },
-            required: ["name"]
-          }
-        }
-      },
-      required: ["entities"]
-    },
-    handler: async (params: any) => {
-      const { entities } = params;
+    else if (toolName === "update_entities") {
+      const entities = params.entities;
       const updatedEntities = [];
-      const errors = [];
       
       for (const entity of entities) {
-        try {
-          // First get the existing entity
-          const existingEntity = await kgClient.getEntity(entity.name);
-          
-          if (!existingEntity) {
-            errors.push({
-              name: entity.name,
-              error: `Entity not found`
-            });
-            continue;
-          }
-          
-          // Update fields that are provided, keep existing values for others
-          const updatedEntity = await kgClient.saveEntity({
-            name: entity.name,
-            entityType: entity.entityType || existingEntity.entityType,
-            observations: entity.observations || existingEntity.observations,
-            isImportant: entity.isImportant !== undefined ? entity.isImportant : existingEntity.isImportant
-          });
-          
-          updatedEntities.push(updatedEntity);
-        } catch (error) {
-          errors.push({
-            name: entity.name,
-            error: (error as Error).message
-          });
+        // Get the existing entity first, then update with new values
+        const existingEntity = await kgClient.getEntity(entity.name);
+        if (!existingEntity) {
+          throw new Error(`Entity "${entity.name}" not found`);
         }
+        
+        // Update with new values, preserving existing values for missing fields
+        const updatedEntity = await kgClient.saveEntity({
+          name: entity.name,
+          entityType: entity.entityType || existingEntity.entityType,
+          observations: entity.observations || existingEntity.observations,
+          isImportant: entity.isImportant !== undefined ? entity.isImportant : existingEntity.isImportant
+        });
+        
+        updatedEntities.push(updatedEntity);
       }
       
       return {
         entities: updatedEntities.map(e => ({
           name: e.name,
           entityType: e.entityType,
-          observations: e.observations,
-          isImportant: e.isImportant
-        })),
-        errors: errors.length > 0 ? errors : undefined
-      };
-    }
-  });
-
-  server.registerTool({
-    name: "delete_entities",
-    description: "Delete one or more entities from the knowledge graph",
-    parameters: {
-      type: "object",
-      properties: {
-        names: {
-          type: "array",
-          items: { type: "string" }
-        }
-      },
-      required: ["names"]
-    },
-    handler: async (params: any) => {
-      const { names } = params;
-      const results = [];
-      
-      for (const name of names) {
-        try {
-          // Delete the entity
-          const success = await kgClient.deleteEntity(name);
-          
-          results.push({
-            name,
-            deleted: success
-          });
-        } catch (error) {
-          results.push({
-            name,
-            deleted: false,
-            error: (error as Error).message
-          });
-        }
-      }
-      
-      return { results };
-    }
-  });
-
-  server.registerTool({
-    name: "create_relations",
-    description: "Create relations between entities in the knowledge graph",
-    parameters: {
-      type: "object",
-      properties: {
-        relations: {
-          type: "array",
-          items: {
-            type: "object",
-            properties: {
-              from: { type: "string" },
-              to: { type: "string" },
-              relationType: { type: "string" }
-            },
-            required: ["from", "to", "relationType"]
-          }
-        }
-      },
-      required: ["relations"]
-    },
-    handler: async (params: any) => {
-      const { relations } = params;
-      const createdRelations = [];
-      
-      for (const relation of relations) {
-        try {
-          const savedRelation = await kgClient.saveRelation({
-            from: relation.from,
-            to: relation.to,
-            relationType: relation.relationType
-          });
-          
-          createdRelations.push(savedRelation);
-        } catch (error) {
-          console.error(`Error creating relation: ${(error as Error).message}`);
-        }
-      }
-      
-      return {
-        relations: createdRelations.map(r => ({
-          from: r.from,
-          to: r.to,
-          relationType: r.relationType
+          observations: e.observations
         }))
       };
     }
-  });
-
-  server.registerTool({
-    name: "delete_relations",
-    description: "Delete relations between entities in the knowledge graph",
-    parameters: {
-      type: "object",
-      properties: {
-        relations: {
-          type: "array",
-          items: {
-            type: "object",
-            properties: {
-              from: { type: "string" },
-              to: { type: "string" },
-              relationType: { type: "string" }
-            },
-            required: ["from", "to", "relationType"]
-          }
-        }
-      },
-      required: ["relations"]
-    },
-    handler: async (params: any) => {
-      const { relations } = params;
+    else if (toolName === "delete_entities") {
+      const names = params.names;
       const results = [];
       
-      for (const relation of relations) {
-        try {
-          // Delete the relation
-          const success = await kgClient.deleteRelation(
-            relation.from,
-            relation.to,
-            relation.relationType
-          );
-          
-          results.push({
-            from: relation.from,
-            to: relation.to,
-            relationType: relation.relationType,
-            deleted: success
-          });
-        } catch (error) {
-          results.push({
-            from: relation.from,
-            to: relation.to,
-            relationType: relation.relationType,
-            deleted: false,
-            error: (error as Error).message
-          });
-        }
-      }
-      
-      return { results };
-    }
-  });
-
-  server.registerTool({
-    name: "search_nodes",
-    description: "Search for entities in the knowledge graph using Elasticsearch query capabilities. The query parameter accepts Elasticsearch Query String syntax including boolean operators (AND, OR, NOT), wildcards (*), fuzzy matching (~N), proximity searches (\"phrase\"~N), boosting (^N), and field-specific searches (field:value).",
-    parameters: {
-      type: "object",
-      properties: {
-        query: { 
-          type: "string",
-          description: "Elasticsearch Query String syntax. Examples: 'software AND engineer', 'prog*er', 'programer~1', '\"machine learning\"~3', 'software^2 engineer', 'observations:\"expert\"'."
-        },
-        entityTypes: {
-          type: "array",
-          items: { type: "string" },
-          description: "Optional filter to limit results to specific entity types (e.g. ['Person', 'Company'])."
-        },
-        limit: { 
-          type: "number", 
-          description: "Maximum number of results to return (default: 10)."
-        },
-        sortBy: {
-          type: "string",
-          enum: ["relevance", "recent", "importance"],
-          description: "Sorting method: 'relevance' (text match quality), 'recent' (recently accessed), or 'importance' (marked as important)."
-        }
-      },
-      required: ["query"]
-    },
-    handler: async (params: any) => {
-      const { query, entityTypes, limit = 10, sortBy = "relevance" } = params;
-      
-      const searchParams: ESSearchParams = {
-        query,
-        entityTypes,
-        limit,
-        sortBy: sortBy as 'relevance' | 'recent' | 'importance'
-      };
-      
-      const results = await kgClient.search(searchParams);
-      
-      // Transform the results to the expected format
-      const entities = results.hits.hits
-        .filter((hit: any) => hit._source.type === 'entity')
-        .map((hit: any) => ({
-          name: hit._source.name,
-          entityType: hit._source.entityType,
-          observations: (hit._source as ESEntity).observations,
-          score: hit._score,
-          highlights: hit.highlight || {}
-        }));
-      
-      return { entities };
-    }
-  });
-
-  server.registerTool({
-    name: "open_nodes",
-    description: "Get details about specific entities by name",
-    parameters: {
-      type: "object",
-      properties: {
-        names: {
-          type: "array",
-          items: { type: "string" }
-        }
-      },
-      required: ["names"]
-    },
-    handler: async (params: any) => {
-      const { names } = params;
-      const entities = [];
-      const relations = [];
-      
-      // Get each requested entity
+      // Delete each entity individually
       for (const name of names) {
-        const entity = await kgClient.getEntity(name);
-        if (entity) {
-          entities.push({
-            name: entity.name,
-            entityType: entity.entityType,
-            observations: entity.observations
-          });
-          
-          // Get related entities (direct connections only)
-          const related = await kgClient.getRelatedEntities(name, 1);
-          
-          // Add relations
-          for (const relation of related.relations) {
-            relations.push({
-              from: relation.from,
-              to: relation.to,
-              relationType: relation.relationType
-            });
-          }
-        }
+        const success = await kgClient.deleteEntity(name);
+        results.push({ name, deleted: success });
       }
-      
-      return { entities, relations };
-    }
-  });
-
-  server.registerTool({
-    name: "add_observations",
-    description: "Add observations to an existing entity",
-    parameters: {
-      type: "object",
-      properties: {
-        entityName: { type: "string" },
-        observations: {
-          type: "array",
-          items: { type: "string" }
-        }
-      },
-      required: ["entityName", "observations"]
-    },
-    handler: async (params: any) => {
-      const { entityName, observations } = params;
-      
-      // Get existing entity
-      const entity = await kgClient.getEntity(entityName);
-      if (!entity) {
-        throw new Error(`Entity "${entityName}" not found`);
-      }
-      
-      // Add new observations
-      const updatedObservations = [
-        ...entity.observations,
-        ...observations
-      ];
-      
-      // Update entity
-      const updated = await kgClient.saveEntity({
-        name: entity.name,
-        entityType: entity.entityType,
-        observations: updatedObservations,
-        isImportant: entity.isImportant
-      });
       
       return {
-        entity: {
-          name: updated.name,
-          entityType: updated.entityType,
-          observations: updated.observations
-        }
+        success: true,
+        results
       };
     }
-  });
-
-  server.registerTool({
-    name: "mark_important",
-    description: "Mark an entity as important",
-    parameters: {
-      type: "object",
-      properties: {
-        entityName: { type: "string" },
-        isImportant: { type: "boolean" }
-      },
-      required: ["entityName", "isImportant"]
-    },
-    handler: async (params: any) => {
-      const { entityName, isImportant } = params;
+    else if (toolName === "create_relations") {
+      const relations = params.relations;
+      const savedRelations = [];
       
-      // Get existing entity
-      const entity = await kgClient.getEntity(entityName);
-      if (!entity) {
-        throw new Error(`Entity "${entityName}" not found`);
+      for (const relation of relations) {
+        const savedRelation = await kgClient.saveRelation({
+          from: relation.from,
+          to: relation.to,
+          relationType: relation.type // Map "type" from API to "relationType" in internal model
+        });
+        
+        savedRelations.push(savedRelation);
       }
-      
-      // Update entity importance
-      const updated = await kgClient.saveEntity({
-        name: entity.name,
-        entityType: entity.entityType,
-        observations: entity.observations,
-        isImportant
-      });
       
       return {
-        entity: {
-          name: updated.name,
-          entityType: updated.entityType,
-          observations: updated.observations,
-          isImportant: updated.isImportant
-        }
+        relations: savedRelations.map(r => ({
+          from: r.from,
+          to: r.to,
+          type: r.relationType // Map "relationType" from internal model to "type" in API
+        }))
       };
     }
-  });
-
-  server.registerTool({
-    name: "get_recent",
-    description: "Get recently accessed entities",
-    parameters: {
-      type: "object",
-      properties: {
-        limit: { type: "number" },
-        entityTypes: {
-          type: "array",
-          items: { type: "string" }
-        }
-      }
-    },
-    handler: async (params: any) => {
-      const { limit = 10, entityTypes } = params;
+    else if (toolName === "delete_relations") {
+      const relations = params.relations;
+      const results = [];
       
-      // Search with empty query but sort by recency
+      // Delete each relation individually
+      for (const relation of relations) {
+        const success = await kgClient.deleteRelation(
+          relation.from, 
+          relation.to, 
+          relation.type // Map "type" from API to "relationType" in internal call
+        );
+        results.push({ 
+          from: relation.from, 
+          to: relation.to, 
+          type: relation.type,
+          deleted: success 
+        });
+      }
+      
+      return {
+        success: true,
+        results
+      };
+    }
+    else if (toolName === "search_nodes") {
       const searchParams: ESSearchParams = {
-        query: "",  // Empty query matches everything
-        entityTypes,
-        limit,
-        sortBy: 'recent'
+        query: params.query,
+        entityTypes: params.entityTypes,
+        limit: params.limit || 10,
+        sortBy: params.sortBy
       };
       
       const results = await kgClient.search(searchParams);
@@ -537,10 +412,119 @@ async function startServer() {
       
       return { entities };
     }
+    else if (toolName === "open_nodes") {
+      const names = params.names;
+      const entities = [];
+      
+      // Get each entity by name
+      for (const name of names) {
+        const entity = await kgClient.getEntity(name);
+        if (entity) {
+          entities.push(entity);
+        }
+      }
+      
+      return {
+        entities: entities.map(e => ({
+          name: e.name,
+          entityType: e.entityType,
+          observations: e.observations,
+          lastRead: e.lastRead,
+          isImportant: e.isImportant
+        }))
+      };
+    }
+    else if (toolName === "add_observations") {
+      const name = params.name;
+      const observations = params.observations;
+      
+      // Get existing entity
+      const entity = await kgClient.getEntity(name);
+      if (!entity) {
+        throw new Error(`Entity "${name}" not found`);
+      }
+      
+      // Add new observations to the existing ones
+      const updatedObservations = [
+        ...entity.observations,
+        ...observations
+      ];
+      
+      // Update the entity
+      const updatedEntity = await kgClient.saveEntity({
+        name: entity.name,
+        entityType: entity.entityType,
+        observations: updatedObservations,
+        isImportant: entity.isImportant
+      });
+      
+      return {
+        entity: {
+          name: updatedEntity.name,
+          entityType: updatedEntity.entityType,
+          observations: updatedEntity.observations
+        }
+      };
+    }
+    else if (toolName === "mark_important") {
+      const name = params.name;
+      const important = params.important;
+      
+      // Get existing entity
+      const entity = await kgClient.getEntity(name);
+      if (!entity) {
+        throw new Error(`Entity "${name}" not found`);
+      }
+      
+      // Update importance flag
+      const updatedEntity = await kgClient.saveEntity({
+        name: entity.name,
+        entityType: entity.entityType,
+        observations: entity.observations,
+        isImportant: important
+      });
+      
+      return {
+        entity: {
+          name: updatedEntity.name,
+          entityType: updatedEntity.entityType,
+          observations: updatedEntity.observations,
+          isImportant: updatedEntity.isImportant
+        }
+      };
+    }
+    else if (toolName === "get_recent") {
+      const limit = params.limit || 10;
+      
+      // Search with empty query but sort by recency
+      const searchParams: ESSearchParams = {
+        query: "", // Empty query matches everything
+        limit: limit,
+        sortBy: 'recent' // Assuming this is the correct value for recent sorting
+      };
+      
+      const results = await kgClient.search(searchParams);
+      
+      // Transform the results to the expected format
+      const entities = results.hits.hits
+        .filter((hit: any) => hit._source.type === 'entity')
+        .map((hit: any) => ({
+          name: hit._source.name,
+          entityType: hit._source.entityType,
+          observations: (hit._source as ESEntity).observations,
+          lastRead: (hit._source as ESEntity).lastRead
+        }));
+      
+      return { entities };
+    }
+    
+    throw new Error(`Unknown tool: ${toolName}`);
   });
 
   // Start the server
-  await server.start();
+  const transport = new StdioServerTransport();
+  await server.connect(transport);
+  console.log('MCP server running on stdio');
 }
 
 // Startup error handling
