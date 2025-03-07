@@ -10,6 +10,7 @@ A scalable knowledge graph implementation for Model Context Protocol (MCP) using
 - **Import/Export Tools**: Easy migration from existing JSON-based knowledge graphs
 - **Rich Query API**: Advanced querying capabilities not possible with the previous implementation
 - **Admin Tools**: Management CLI for inspecting and maintaining the knowledge graph
+- **Complete CRUD Operations**: Full create, read, update, and delete capabilities for entities and relations
 
 ## Architecture
 
@@ -128,6 +129,96 @@ Search results include:
 - Entity types and observation counts
 - Sorted by most relevant first
 
+## MCP Server Tools
+
+The MCP server exposes the following tools for interacting with the knowledge graph:
+
+### Entity Operations
+
+| Tool | Description |
+|------|-------------|
+| `create_entities` | Create one or more entities in the knowledge graph |
+| `update_entities` | Update properties of existing entities |
+| `delete_entities` | Delete one or more entities from the knowledge graph |
+| `add_observations` | Add observations to an existing entity |
+| `mark_important` | Mark an entity as important or not |
+
+### Relation Operations
+
+| Tool | Description |
+|------|-------------|
+| `create_relations` | Create relations between entities |
+| `delete_relations` | Delete relations between entities |
+
+### Query Operations
+
+| Tool | Description |
+|------|-------------|
+| `search_nodes` | Search for entities using a query string |
+| `open_nodes` | Get details about specific entities by name |
+| `get_recent` | Get recently accessed entities |
+
+### Tool Examples
+
+```json
+// Create entities
+{ 
+  "entities": [
+    {
+      "name": "John Smith",
+      "entityType": "Person",
+      "observations": ["Software Engineer", "Works at Acme Corp"],
+      "isImportant": true
+    }
+  ]
+}
+
+// Update entities
+{
+  "entities": [
+    {
+      "name": "John Smith",
+      "entityType": "Engineer",
+      "isImportant": false
+    }
+  ]
+}
+
+// Delete entities
+{
+  "names": ["Outdated Entity"]
+}
+
+// Create relations
+{
+  "relations": [
+    {
+      "from": "John Smith",
+      "to": "Acme Corp",
+      "relationType": "works at"
+    }
+  ]
+}
+
+// Delete relations
+{
+  "relations": [
+    {
+      "from": "John Smith",
+      "to": "Previous Company",
+      "relationType": "worked at"
+    }
+  ]
+}
+
+// Search nodes
+{
+  "query": "software engineer",
+  "entityTypes": ["Person"],
+  "sortBy": "relevance"
+}
+```
+
 ## Relevancy Ranking
 
 The knowledge graph implements a sophisticated relevancy ranking system that considers:
@@ -146,6 +237,7 @@ This approach simulates memory-like behavior where important, recent, and freque
 - **Rich Queries**: Advanced search capabilities like fuzzy matching and relevancy ranking
 - **Resiliency**: Better handling of concurrent operations
 - **Observability**: Built-in monitoring and diagnostics
+- **Complete CRUD**: Full lifecycle management for entities and relations
 
 ## License
 
