@@ -34,6 +34,7 @@ function showHelp() {
   console.log('  import <file>        Import data from a JSON file');
   console.log('  export <file>        Export data to a JSON file');
   console.log('  stats                Display statistics about the knowledge graph');
+  console.log('  search <query>       Search the knowledge graph');
   console.log('  reset                Reset the knowledge graph (delete all data)');
   console.log('  entity <name>        Display information about a specific entity');
   console.log('  help                 Show this help information');
@@ -105,6 +106,57 @@ async function showStats() {
     });
   } catch (error) {
     console.error('Error getting statistics:', (error as Error).message);
+    process.exit(1);
+  }
+}
+
+/**
+ * Search the knowledge graph
+ * @param query The search query
+ */
+async function searchGraph(query: string) {
+  try {
+    // Initialize client
+    await kgClient.initialize();
+    
+    // Search for entities
+    const results = await kgClient.search({
+      query,
+      limit: 10,
+      sortBy: 'relevance'
+    });
+    
+    // Display results
+    console.log(`Search Results for "${query}"`);
+    console.log('====================================');
+    console.log(`Found ${results.hits.total.value} matches`);
+    console.log('');
+    
+    // Display each entity
+    const hits = results.hits.hits;
+    hits.forEach((hit, index) => {
+      const score = hit._score.toFixed(2);
+      const source = hit._source;
+      
+      if (source.type === 'entity') {
+        console.log(`${index + 1}. ${source.name} (${source.entityType}) [Score: ${score}]`);
+        console.log(`   Observations: ${source.observations.length}`);
+        
+        // Show highlights if available
+        if (hit.highlight) {
+          console.log('   Matches:');
+          Object.entries(hit.highlight).forEach(([field, highlights]) => {
+            highlights.forEach(highlight => {
+              console.log(`   - ${field}: ${highlight}`);
+            });
+          });
+        }
+        console.log('');
+      }
+    });
+    
+  } catch (error) {
+    console.error('Error searching knowledge graph:', (error as Error).message);
     process.exit(1);
   }
 }
@@ -225,6 +277,14 @@ async function main() {
     
     case 'stats':
       await showStats();
+      break;
+      
+    case 'search':
+      if (!args[1]) {
+        console.error('Error: Search query is required');
+        process.exit(1);
+      }
+      await searchGraph(args[1]);
       break;
     
     case 'reset':

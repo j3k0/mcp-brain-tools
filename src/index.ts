@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
 // @ts-ignore
-import { Server } from "@modelcontextprotocol/sdk/dist/index.js";
+import { Server } from "@modelcontextprotocol/sdk";
 // @ts-ignore
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import {

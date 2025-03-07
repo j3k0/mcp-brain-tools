@@ -105,7 +105,8 @@ async function exportToJsonFile(
 }
 
 // Command line interface
-if (require.main === module) {
+// Check if this is the main module (ES modules version)
+if (import.meta.url === `file://${process.argv[1]}`) {
   const args = process.argv.slice(2);
   const command = args[0];
   const filePath = args[1];
