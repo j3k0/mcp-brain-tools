@@ -429,9 +429,8 @@ export class KnowledgeGraphClient {
   }
 
   /**
-   * Search for entities or relations
-   * @param params Search parameters 
-   * @param zone Optional memory zone name, uses defaultZone if not specified
+   * Search for entities and relations in the knowledge graph
+   * @param params Search parameters
    */
   async search(params: ESSearchParams & { zone?: string }): Promise<ESHighlightResponse<ESEntity | ESRelation>> {
     const actualZone = params.zone || this.defaultZone;
@@ -439,7 +438,63 @@ export class KnowledgeGraphClient {
     
     const indexName = this.getIndexForZone(actualZone);
     
-    // Build search query
+    // Special handling for wildcard query
+    if (params.query === '*') {
+      console.log(`Performing wildcard search in zone: ${actualZone}, index: ${indexName}`);
+      
+      try {
+        // Use match_all query for wildcard
+        const response = await this.client.search({
+          index: indexName,
+          body: {
+            query: {
+              match_all: {}
+            },
+            sort: [{ lastRead: { order: 'desc' } }],
+            size: params.limit || 10,
+            from: params.offset || 0
+          }
+        });
+        
+        console.log(`Wildcard search results: ${JSON.stringify(response.hits)}`);
+        
+        return response as unknown as ESHighlightResponse<ESEntity | ESRelation>;
+      } catch (error) {
+        console.error(`Error in wildcard search: ${error.message}`);
+        throw error;
+      }
+    }
+    
+    // Special handling for exact entity name search
+    if (params.query && !params.query.includes(' ')) {
+      console.log(`Performing exact entity name search for "${params.query}" in zone: ${actualZone}, index: ${indexName}`);
+      
+      try {
+        // Use match query for exact entity name
+        const response = await this.client.search({
+          index: indexName,
+          body: {
+            query: {
+              match: {
+                name: params.query
+              }
+            },
+            sort: [{ lastRead: { order: 'desc' } }],
+            size: params.limit || 10,
+            from: params.offset || 0
+          }
+        });
+        
+        console.log(`Exact entity name search results: ${JSON.stringify(response.hits)}`);
+        
+        return response as unknown as ESHighlightResponse<ESEntity | ESRelation>;
+      } catch (error) {
+        console.error(`Error in exact entity name search: ${error.message}`);
+        throw error;
+      }
+    }
+    
+    // Build search query for non-wildcard searches
     const query: any = {
       bool: {
         must: [
@@ -462,16 +517,8 @@ export class KnowledgeGraphClient {
       });
     }
     
-    // Add zone filter - CRITICAL for proper zone isolation
-    // This ensures that we only get results from the specified zone
-    query.bool.must.push({
-      term: {
-        zone: actualZone
-      }
-    });
-    
     // Log validation to ensure zone filter is being applied
-    console.debug(`Searching in zone: ${actualZone}`);
+    console.log(`Searching in zone: ${actualZone}, index: ${indexName}, query: ${JSON.stringify(query)}`);
     
     // Set up sort order
     let sort: any[] = [];
@@ -487,25 +534,32 @@ export class KnowledgeGraphClient {
       sort = [{ _score: { order: 'desc' } }];
     }
     
-    // Execute search
-    const response = await this.client.search({
-      index: indexName,
-      body: {
-        query,
-        sort,
-        highlight: {
-          fields: {
-            name: {},
-            observations: {},
-            entityType: {}
-          }
-        },
-        size: params.limit || 10,
-        from: params.offset || 0
-      }
-    });
-    
-    return response as unknown as ESHighlightResponse<ESEntity | ESRelation>;
+    try {
+      // Execute search
+      const response = await this.client.search({
+        index: indexName,
+        body: {
+          query,
+          sort,
+          highlight: {
+            fields: {
+              name: {},
+              observations: {},
+              entityType: {}
+            }
+          },
+          size: params.limit || 10,
+          from: params.offset || 0
+        }
+      });
+      
+      console.log(`Search results: ${JSON.stringify(response.hits)}`);
+      
+      return response as unknown as ESHighlightResponse<ESEntity | ESRelation>;
+    } catch (error) {
+      console.error(`Error in search: ${error.message}`);
+      throw error;
+    }
   }
 
   /**

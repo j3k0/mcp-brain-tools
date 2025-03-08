@@ -108,7 +108,12 @@ async function startServer() {
                     isImportant: {type: "boolean", description: "Is entity important"}
                   },
                   required: ["name", "entityType"]
-                }
+                },
+                description: "List of entities to create"
+              },
+              memory_zone: {
+                type: "string",
+                description: "Optional memory zone to create entities in. If not specified, uses the default zone."
               }
             },
             required: ["entities"],
@@ -124,6 +129,7 @@ async function startServer() {
             properties: {
               entities: {
                 type: "array",
+                description: "List of entities to update",
                 items: {
                   type: "object",
                   properties: {
@@ -137,6 +143,10 @@ async function startServer() {
                   },
                   required: ["name"]
                 }
+              },
+              memory_zone: {
+                type: "string",
+                description: "Optional memory zone specifier. If provided, entities will be updated in this zone."
               }
             },
             required: ["entities"],
@@ -154,6 +164,10 @@ async function startServer() {
                 type: "array",
                 items: {type: "string"},
                 description: "Names of entities to delete"
+              },
+              memory_zone: {
+                type: "string",
+                description: "Optional memory zone specifier. If provided, entities will be deleted from this zone."
               }
             },
             required: ["names"],
@@ -169,6 +183,7 @@ async function startServer() {
             properties: {
               relations: {
                 type: "array",
+                description: "List of relations to create",
                 items: {
                   type: "object",
                   properties: {
@@ -178,6 +193,10 @@ async function startServer() {
                   },
                   required: ["from", "to", "type"]
                 }
+              },
+              memory_zone: {
+                type: "string",
+                description: "Optional memory zone specifier. Relationships may span across zones, with entities from different zones."
               }
             },
             required: ["relations"],
@@ -193,15 +212,20 @@ async function startServer() {
             properties: {
               relations: {
                 type: "array",
+                description: "List of relations to delete",
                 items: {
                   type: "object",
                   properties: {
-                    from: {type: "string"},
-                    to: {type: "string"},
-                    type: {type: "string"}
+                    from: {type: "string", description: "Source entity name"},
+                    to: {type: "string", description: "Target entity name"},
+                    type: {type: "string", description: "Relationship type"}
                   },
                   required: ["from", "to", "type"]
                 }
+              },
+              memory_zone: {
+                type: "string",
+                description: "Optional memory zone specifier. If provided, relations will be deleted from this zone."
               }
             },
             required: ["relations"],
@@ -237,6 +261,10 @@ async function startServer() {
                 type: "boolean",
                 description: "Whether to include full entity observations in results (default: false)",
                 default: false
+              },
+              memory_zone: {
+                type: "string",
+                description: "Optional memory zone specifier. If provided, search will be limited to this zone."
               }
             },
             required: ["query"],
@@ -369,11 +397,12 @@ async function startServer() {
     
     if (toolName === "create_entities") {
       const entities = params.entities;
+      const zone = params.memory_zone;
       
       // First, check if any entities already exist
       const conflictingEntities = [];
       for (const entity of entities) {
-        const existingEntity = await kgClient.getEntity(entity.name);
+        const existingEntity = await kgClient.getEntity(entity.name, zone);
         if (existingEntity) {
           conflictingEntities.push(entity.name);
         }
@@ -381,9 +410,10 @@ async function startServer() {
       
       // If there are conflicts, reject the entire operation
       if (conflictingEntities.length > 0) {
+        const zoneMsg = zone ? ` in zone "${zone}"` : "";
         return formatResponse({
           success: false,
-          error: "Entity creation failed: Conflicts detected",
+          error: `Entity creation failed: Conflicts detected${zoneMsg}`,
           conflicts: conflictingEntities,
           message: "Please use update_entities for modifying existing entities."
         });
@@ -398,7 +428,7 @@ async function startServer() {
           observations: entity.observations,
           isImportant: entity.isImportant,
           relevanceScore: entity.relevanceScore
-        });
+        }, zone);
         
         createdEntities.push(savedEntity);
       }
@@ -414,13 +444,15 @@ async function startServer() {
     }
     else if (toolName === "update_entities") {
       const entities = params.entities;
+      const zone = params.memory_zone;
       const updatedEntities = [];
       
       for (const entity of entities) {
         // Get the existing entity first, then update with new values
-        const existingEntity = await kgClient.getEntity(entity.name);
+        const existingEntity = await kgClient.getEntity(entity.name, zone);
         if (!existingEntity) {
-          throw new Error(`Entity "${entity.name}" not found`);
+          const zoneMsg = zone ? ` in zone "${zone}"` : "";
+          throw new Error(`Entity "${entity.name}" not found${zoneMsg}`);
         }
         
         // Update with new values, preserving existing values for missing fields
@@ -430,7 +462,7 @@ async function startServer() {
           observations: entity.observations || existingEntity.observations,
           isImportant: entity.isImportant !== undefined ? entity.isImportant : existingEntity.isImportant,
           relevanceScore: entity.relevanceScore || existingEntity.relevanceScore
-        });
+        }, zone);
         
         updatedEntities.push(updatedEntity);
       }
@@ -445,11 +477,12 @@ async function startServer() {
     }
     else if (toolName === "delete_entities") {
       const names = params.names;
+      const zone = params.memory_zone;
       const results = [];
       
       // Delete each entity individually
       for (const name of names) {
-        const success = await kgClient.deleteEntity(name);
+        const success = await kgClient.deleteEntity(name, zone);
         results.push({ name, deleted: success });
       }
       
@@ -460,14 +493,15 @@ async function startServer() {
     }
     else if (toolName === "create_relations") {
       const relations = params.relations;
+      const zone = params.memory_zone;
       const savedRelations = [];
       
       for (const relation of relations) {
         const savedRelation = await kgClient.saveRelation({
           from: relation.from,
           to: relation.to,
-          relationType: relation.type // Map "type" from API to "relationType" in internal model
-        });
+          relationType: relation.type
+        }, zone, zone);
         
         savedRelations.push(savedRelation);
       }
@@ -476,12 +510,13 @@ async function startServer() {
         relations: savedRelations.map(r => ({
           from: r.from,
           to: r.to,
-          type: r.relationType // Map "relationType" from internal model to "type" in API
+          type: r.relationType
         }))
       });
     }
     else if (toolName === "delete_relations") {
       const relations = params.relations;
+      const zone = params.memory_zone;
       const results = [];
       
       // Delete each relation individually
@@ -489,7 +524,9 @@ async function startServer() {
         const success = await kgClient.deleteRelation(
           relation.from, 
           relation.to, 
-          relation.type // Map "type" from API to "relationType" in internal call
+          relation.type,
+          zone,
+          zone
         );
         results.push({ 
           from: relation.from, 
@@ -507,13 +544,15 @@ async function startServer() {
     else if (toolName === "search_nodes") {
       const includeObservations = params.includeObservations ?? false;
       const defaultLimit = includeObservations ? 5 : 20;
+      const zone = params.memory_zone;
       
       const searchParams: ESSearchParams = {
         query: params.query,
         entityTypes: params.entityTypes,
         limit: params.limit || defaultLimit,
         sortBy: params.sortBy,
-        includeObservations
+        includeObservations,
+        zone
       };
       
       const results = await kgClient.search(searchParams);

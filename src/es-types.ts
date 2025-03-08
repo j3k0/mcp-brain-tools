@@ -124,4 +124,5 @@ export interface ESSearchParams {
   offset?: number;
   sortBy?: 'relevance' | 'recent' | 'importance';
   includeObservations?: boolean;
+  zone?: string; // Optional memory zone to search in
 } 
