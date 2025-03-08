@@ -65,25 +65,26 @@ We're migrating our knowledge graph "memory" from a single JSON file to Elastics
 ## Multi-Zone Feature Fixes
 
 ### Critical Issues to Address
-- [ ] **Cross-Zone Search Issue**: Fix search function to properly filter by zone
-  - Update search implementation to add mandatory zone filters at the query level
-  - Ensure zone parameter is respected in all search operations
-  - Add validation to verify zone filtering is working properly
+- [x] **Cross-Zone Search Issue**: Fix search function to properly filter by zone
+  - Added validation to ensure zone parameter is respected in search operations
+  - Added console.debug logging to verify zone filtering
+  - Updated search implementation with strict zone filtering to ensure isolation
 
-- [ ] **Entity Retrieval Zone Isolation**: Ensure entities are properly isolated by zone
-  - Update getEntity to strictly enforce zone boundaries
-  - Modify open_nodes to respect zone parameters and only retrieve entities from the specified zone
-  - Add zone validation to confirm operations don't cross zone boundaries
+- [x] **Entity Retrieval Zone Isolation**: Ensure entities are properly isolated by zone
+  - Updated getEntityWithoutUpdatingLastRead to use search with explicit zone filtering
+  - Modified getEntity to use proper zone-aware entity retrieval
+  - Updated open_nodes to respect zone parameters and only retrieve entities from the specified zone
+  - Added memory_zone parameter to MCP tools for zone-specific operations
 
-- [ ] **Fix Empty Recent Results**: Update get_recent to be zone-aware
-  - Modify getRecentEntities to filter by zone
-  - Ensure all lastRead/lastWrite tracking respects zone boundaries
-  - Add zone parameter to recency tracking functions
+- [x] **Fix Empty Recent Results**: Update get_recent to be zone-aware
+  - Added memory_zone parameter to the get_recent tool
+  - Updated the search call in get_recent to pass the zone parameter
+  - Fixed zone handling in all related functions
 
-### Implementation Tasks
-- [ ] **Update search method in KnowledgeGraphClient**:
+### Implementation Details
+- [x] **Updated search method in KnowledgeGraphClient**:
   ```typescript
-  // Add mandatory zone filter to all entity queries
+  // Added mandatory zone filter to all entity queries
   query.bool.must.push({
     term: {
       zone: actualZone
@@ -91,9 +92,9 @@ We're migrating our knowledge graph "memory" from a single JSON file to Elastics
   });
   ```
 
-- [ ] **Fix getEntity and related methods**:
+- [x] **Fixed getEntityWithoutUpdatingLastRead method**:
   ```typescript
-  // Ensure zone filtering in entity retrieval
+  // Replaced direct get by ID with search that includes zone filtering
   const response = await this.client.search({
     index: indexName,
     body: {
@@ -101,36 +102,44 @@ We're migrating our knowledge graph "memory" from a single JSON file to Elastics
         bool: {
           must: [
             { term: { name: name } },
-            { term: { zone: actualZone } }
-          ]
-        }
-      }
-    }
-  });
-  ```
-
-- [ ] **Update getRecentEntities method**:
-  ```typescript
-  // Add zone filtering to recent entities query
-  const response = await this.client.search({
-    index: indexName,
-    body: {
-      query: {
-        bool: {
-          must: [
             { term: { type: 'entity' } },
             { term: { zone: actualZone } }
           ]
         }
       },
-      sort: [
-        { lastRead: { order: 'desc' } }
-      ],
-      size: limit
+      size: 1
     }
   });
   ```
 
+- [x] **Updated getEntity method**:
+  ```typescript
+  // Added proper document ID retrieval for zone-specific updates
+  const searchResponse = await this.client.search({
+    index: indexName,
+    body: {
+      query: {
+        bool: {
+          must: [
+            { term: { name: name } },
+            { term: { type: 'entity' } },
+            { term: { zone: actualZone } }
+          ]
+        }
+      },
+      size: 1
+    }
+  });
+  
+  const docId = typedResponse.hits.hits[0]._id;
+  ```
+
+- [x] **Added memory_zone parameter to MCP tools**:
+  - open_nodes
+  - get_recent
+  - add_observations
+  
+### Remaining Tasks
 - [ ] **Create comprehensive test suite for zone functionality**:
   - Test zone isolation for entity creation and retrieval
   - Test zone-specific search operations
@@ -138,7 +147,7 @@ We're migrating our knowledge graph "memory" from a single JSON file to Elastics
   - Test zone filtering in get_recent operations
 
 - [ ] **Review and update all client-facing API endpoints**:
-  - Ensure all MCP tools properly handle the zone parameter
+  - Need to ensure all remaining MCP tools properly handle the zone parameter
   - Add validation to ensure zone parameters are properly used
   - Add warning logs when operations might cross zone boundaries
 

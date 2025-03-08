@@ -177,12 +177,32 @@ export class KnowledgeGraphClient {
 
     try {
       const indexName = this.getIndexForZone(actualZone);
-      const response = await this.client.get({
+      
+      // Instead of direct get by ID which doesn't enforce zone isolation,
+      // use search with explicit zone filter to ensure we only get entities from this zone
+      const response = await this.client.search({
         index: indexName,
-        id: `entity:${name}`,
+        body: {
+          query: {
+            bool: {
+              must: [
+                { term: { name: name } },
+                { term: { type: 'entity' } },
+                { term: { zone: actualZone } }
+              ]
+            }
+          },
+          size: 1
+        }
       });
       
-      return response._source as ESEntity;
+      const typedResponse = response as unknown as ESSearchResponse<ESEntity>;
+      
+      if (typedResponse.hits.total.value === 0) {
+        return null;
+      }
+      
+      return typedResponse.hits.hits[0]._source;
     } catch (error) {
       if (error.statusCode === 404) {
         return null;
@@ -208,9 +228,36 @@ export class KnowledgeGraphClient {
     const now = new Date().toISOString();
     const indexName = this.getIndexForZone(actualZone);
     
+    // Search for the entity by name and zone to get the _id
+    const searchResponse = await this.client.search({
+      index: indexName,
+      body: {
+        query: {
+          bool: {
+            must: [
+              { term: { name: name } },
+              { term: { type: 'entity' } },
+              { term: { zone: actualZone } }
+            ]
+          }
+        },
+        size: 1
+      }
+    });
+    
+    const typedResponse = searchResponse as unknown as ESSearchResponse<ESEntity>;
+    
+    if (typedResponse.hits.total.value === 0) {
+      // This shouldn't happen since we already found the entity
+      console.error(`Entity ${name} in zone ${actualZone} not found during update`);
+      return entity;
+    }
+    
+    const docId = typedResponse.hits.hits[0]._id;
+    
     await this.client.update({
       index: indexName,
-      id: `entity:${name}`,
+      id: docId,
       doc: {
         lastRead: now,
         readCount: entity.readCount + 1
@@ -415,12 +462,16 @@ export class KnowledgeGraphClient {
       });
     }
     
-    // Add zone filter
+    // Add zone filter - CRITICAL for proper zone isolation
+    // This ensures that we only get results from the specified zone
     query.bool.must.push({
       term: {
         zone: actualZone
       }
     });
+    
+    // Log validation to ensure zone filter is being applied
+    console.debug(`Searching in zone: ${actualZone}`);
     
     // Set up sort order
     let sort: any[] = [];

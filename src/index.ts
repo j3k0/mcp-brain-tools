@@ -254,6 +254,10 @@ async function startServer() {
                 type: "array",
                 items: {type: "string"},
                 description: "Names of entities to retrieve"
+              },
+              memory_zone: {
+                type: "string",
+                description: "Optional memory zone to retrieve entities from. If not specified, uses the default zone."
               }
             },
             required: ["names"],
@@ -269,12 +273,16 @@ async function startServer() {
             properties: {
               name: {
                 type: "string",
-                description: "Entity name"
+                description: "Name of entity to add observations to"
               },
               observations: {
                 type: "array",
                 items: {type: "string"},
-                description: "New observations to add"
+                description: "Observations to add to the entity"
+              },
+              memory_zone: {
+                type: "string",
+                description: "Optional memory zone where the entity is stored. If not specified, uses the default zone."
               }
             },
             required: ["name", "observations"],
@@ -316,6 +324,10 @@ async function startServer() {
                 type: "boolean",
                 description: "Whether to include full entity observations in results (default: false)",
                 default: false
+              },
+              memory_zone: {
+                type: "string",
+                description: "Optional memory zone to get recent entities from. If not specified, uses the default zone."
               }
             },
             additionalProperties: false,
@@ -539,12 +551,13 @@ async function startServer() {
       return formatResponse({ entities, relations: formattedRelations });
     }
     else if (toolName === "open_nodes") {
-      const names = params.names;
-      const entities = [];
+      const names = params.names || [];
+      const zone = params.memory_zone;
       
-      // Get each entity by name
+      // Get the entities
+      const entities: ESEntity[] = [];
       for (const name of names) {
-        const entity = await kgClient.getEntity(name);
+        const entity = await kgClient.getEntity(name, zone);
         if (entity) {
           entities.push(entity);
         }
@@ -559,7 +572,7 @@ async function startServer() {
       
       // Get relations between these entities
       const entityNames = formattedEntities.map(e => e.name);
-      const { relations } = await kgClient.getRelationsForEntities(entityNames);
+      const { relations } = await kgClient.getRelationsForEntities(entityNames, zone);
       
       // Map relations to the expected format
       const formattedRelations = relations.map(r => ({
@@ -573,11 +586,13 @@ async function startServer() {
     else if (toolName === "add_observations") {
       const name = params.name;
       const observations = params.observations;
+      const zone = params.memory_zone;
       
       // Get existing entity
-      const entity = await kgClient.getEntity(name);
+      const entity = await kgClient.getEntity(name, zone);
       if (!entity) {
-        throw new Error(`Entity "${name}" not found`);
+        const zoneMsg = zone ? ` in zone "${zone}"` : "";
+        throw new Error(`Entity "${name}" not found${zoneMsg}`);
       }
       
       // Add new observations to the existing ones
@@ -593,7 +608,7 @@ async function startServer() {
         observations: updatedObservations,
         isImportant: entity.isImportant,
         relevanceScore: entity.relevanceScore
-      });
+      }, zone);
       
       return formatResponse({
         entity: {
@@ -644,13 +659,15 @@ async function startServer() {
       const includeObservations = params.includeObservations ?? false;
       const defaultLimit = includeObservations ? 5 : 20;
       const limit = params.limit || defaultLimit;
+      const zone = params.memory_zone;
       
       // Search with empty query but sort by recency
-      const searchParams: ESSearchParams = {
+      const searchParams: ESSearchParams & { zone?: string } = {
         query: "*", // Use wildcard instead of empty query to match all documents
         limit: limit,
         sortBy: 'recent', // Sort by recency
-        includeObservations
+        includeObservations,
+        zone // Pass through the zone parameter
       };
       
       const results = await kgClient.search(searchParams);
