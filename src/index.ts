@@ -690,6 +690,22 @@ async function startServer() {
       });
     }
   });
+
+  return server;
 }
 
-startServer();
+// Start the server with proper transport and error handling
+async function initServer() {
+  const server = await startServer();
+  
+  // Connect the server to the transport
+  const transport = new StdioServerTransport();
+  await server.connect(transport);
+  console.error('MCP server running on stdio');
+}
+
+// Initialize with error handling
+initServer().catch(error => {
+  console.error('Error starting server:', error);
+  process.exit(1);
+});
