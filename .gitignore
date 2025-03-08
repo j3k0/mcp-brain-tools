@@ -6,3 +6,8 @@ backup-memory.json
 backup-*.json
 knowledge-graph-*.json
 TODO.md
+# Test data files
+test-data*.jsonl
+relation.jsonl
+backup.json
+multi-zone-backup.json
