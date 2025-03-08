@@ -443,38 +443,112 @@ export class KnowledgeGraphClient {
   async importData(data: Array<ESEntity | ESRelation>): Promise<{
     entitiesAdded: number;
     relationsAdded: number;
+    invalidRelations?: Array<{relation: ESRelation, reason: string}>;
   }> {
     if (!this.initialized) await this.initialize();
     
     let entitiesAdded = 0;
     let relationsAdded = 0;
+    const invalidRelations: Array<{relation: ESRelation, reason: string}> = [];
     
-    // Prepare bulk operations
-    const operations: any[] = [];
+    // First, collect all entities to be imported
+    const entities = data.filter(item => item.type === 'entity') as ESEntity[];
+    const relations = data.filter(item => item.type === 'relation') as ESRelation[];
     
-    for (const item of data) {
-      if (item.type === 'entity') {
-        const id = `entity:${item.name}`;
-        operations.push({ index: { _index: KG_INDEX, _id: id } });
-        operations.push(item);
-        entitiesAdded++;
-      } else if (item.type === 'relation') {
-        const id = `relation:${item.from}:${item.relationType}:${item.to}`;
-        operations.push({ index: { _index: KG_INDEX, _id: id } });
-        operations.push(item);
-        relationsAdded++;
-      }
+    // Create a set of all entity names (existing + to be imported)
+    const entityNames = new Set<string>();
+    
+    // Add entities that already exist in the database
+    try {
+      const existingEntitiesResult = await this.client.search<{name: string}>({
+        index: KG_INDEX,
+        query: { term: { type: "entity" } },
+        size: 10000, // This limits the total entities, may need pagination for very large datasets
+        _source: ["name"]
+      });
+      
+      existingEntitiesResult.hits.hits.forEach(hit => {
+        if (hit._source && hit._source.name) {
+          entityNames.add(hit._source.name);
+        }
+      });
+    } catch (error) {
+      console.error("Error fetching existing entities:", error);
+      // Continue anyway, will just validate against imported entities
     }
     
-    // Execute bulk operation if there are items to add
-    if (operations.length > 0) {
+    // Add the new entities being imported
+    entities.forEach(entity => {
+      entityNames.add(entity.name);
+    });
+    
+    // Prepare bulk operations for entities
+    const entityOperations: any[] = [];
+    
+    for (const entity of entities) {
+      const id = `entity:${entity.name}`;
+      entityOperations.push({ index: { _index: KG_INDEX, _id: id } });
+      entityOperations.push(entity);
+      entitiesAdded++;
+    }
+    
+    // Execute bulk operation for entities
+    if (entityOperations.length > 0) {
       await this.client.bulk({
         refresh: true,
-        operations
+        operations: entityOperations
       });
     }
     
-    return { entitiesAdded, relationsAdded };
+    // Now validate and import relations
+    const relationOperations: any[] = [];
+    
+    for (const relation of relations) {
+      // Validate that both entities exist
+      if (!entityNames.has(relation.from)) {
+        invalidRelations.push({
+          relation,
+          reason: `Source entity "${relation.from}" does not exist`
+        });
+        continue;
+      }
+      
+      if (!entityNames.has(relation.to)) {
+        invalidRelations.push({
+          relation,
+          reason: `Target entity "${relation.to}" does not exist`
+        });
+        continue;
+      }
+      
+      // Both entities exist, add the relation
+      const id = `relation:${relation.from}:${relation.relationType}:${relation.to}`;
+      relationOperations.push({ index: { _index: KG_INDEX, _id: id } });
+      relationOperations.push(relation);
+      relationsAdded++;
+    }
+    
+    // Execute bulk operation for relations
+    if (relationOperations.length > 0) {
+      await this.client.bulk({
+        refresh: true,
+        operations: relationOperations
+      });
+    }
+    
+    // Log invalid relations if any
+    if (invalidRelations.length > 0) {
+      console.warn(`Warning: ${invalidRelations.length} invalid relations were not imported because their referenced entities don't exist.`);
+      invalidRelations.forEach(invalid => {
+        console.warn(`- Relation ${invalid.relation.from} --[${invalid.relation.relationType}]--> ${invalid.relation.to}: ${invalid.reason}`);
+      });
+    }
+    
+    return { 
+      entitiesAdded, 
+      relationsAdded,
+      invalidRelations: invalidRelations.length > 0 ? invalidRelations : undefined
+    };
   }
 
   /**

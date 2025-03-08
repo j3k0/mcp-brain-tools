@@ -9,19 +9,22 @@ import { ESEntity, ESRelation } from './es-types.js';
 async function importFromJsonFile(
   filePath: string,
   esOptions: { node: string; auth?: { username: string; password: string } }
-): Promise<{ entitiesAdded: number; relationsAdded: number }> {
+): Promise<{ 
+  entitiesAdded: number; 
+  relationsAdded: number;
+  invalidRelationsCount?: number;
+}> {
   try {
-    // Read the JSON file
-    const data = await fs.readFile(filePath, 'utf-8');
+    // Read the file line by line
+    const fileContent = await fs.readFile(filePath, 'utf8');
+    const lines = fileContent.split('\n').filter(line => line.trim() !== '');
     
-    // Parse the JSON lines into objects
-    const lines = data.split('\n').filter(line => line.trim() !== '');
-    const items: Array<ESEntity | ESRelation> = [];
-    
-    // Current date in ISO format for default values
+    // Get current timestamp
     const now = new Date().toISOString();
     
-    // Process each line
+    // Parse each line into an entity or relation
+    const items: Array<ESEntity | ESRelation> = [];
+    
     for (const line of lines) {
       try {
         const item = JSON.parse(line);
@@ -36,7 +39,8 @@ async function importFromJsonFile(
             lastRead: item.lastRead || now,
             lastWrite: item.lastWrite || now,
             readCount: typeof item.readCount === 'number' ? item.readCount : 0,
-            isImportant: !!item.isImportant
+            isImportant: !!item.isImportant,
+            relevanceScore: typeof item.relevanceScore === 'number' ? item.relevanceScore : 1.0
           };
           items.push(entity);
         } else if (item.type === 'relation') {
@@ -59,8 +63,22 @@ async function importFromJsonFile(
     await client.initialize();
     const result = await client.importData(items);
     
+    // Log import summary
     console.log(`Imported ${result.entitiesAdded} entities and ${result.relationsAdded} relations`);
-    return result;
+    
+    // Handle invalid relations
+    if (result.invalidRelations && result.invalidRelations.length > 0) {
+      console.log(`Warning: ${result.invalidRelations.length} relations were not imported due to missing entities.`);
+      console.log('To fix this issue:');
+      console.log('1. Create the missing entities first');
+      console.log('2. Or remove the invalid relations from your import file');
+    }
+    
+    return { 
+      entitiesAdded: result.entitiesAdded, 
+      relationsAdded: result.relationsAdded,
+      invalidRelationsCount: result.invalidRelations?.length
+    };
   } catch (error) {
     console.error('Error importing data:', error);
     throw error;
