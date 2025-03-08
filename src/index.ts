@@ -226,7 +226,7 @@ async function startServer() {
               },
               limit: {
                 type: "integer",
-                description: "Max results (default: 10)"
+                description: "Max results (default: 5)"
               },
               sortBy: {
                 type: "string",
@@ -305,7 +305,7 @@ async function startServer() {
             properties: {
               limit: {
                 type: "integer",
-                description: "Max results (default: 10)"
+                description: "Max results (default: 5)"
               }
             },
             additionalProperties: false,
@@ -484,7 +484,7 @@ async function startServer() {
       const searchParams: ESSearchParams = {
         query: params.query,
         entityTypes: params.entityTypes,
-        limit: params.limit || 10,
+        limit: params.limit || 5,
         sortBy: params.sortBy
       };
       
@@ -603,7 +603,7 @@ async function startServer() {
       });
     }
     else if (toolName === "get_recent") {
-      const limit = params.limit || 10;
+      const limit = params.limit || 5;
       
       // Search with empty query but sort by recency
       const searchParams: ESSearchParams = {
