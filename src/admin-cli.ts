@@ -226,7 +226,7 @@ async function searchGraph(query: string, zone?: string) {
       const hit = results.hits.hits.find(h => 
         h._source.type === 'entity' && (h._source as ESEntity).name === entity.name
       );
-      const score = hit ? hit._score.toFixed(2) : 'N/A';
+      const score = hit && hit._score !== null && hit._score !== undefined ? hit._score.toFixed(2) : 'N/A';
       
       console.log(`${index + 1}. ${entity.name} (${entity.entityType}) [Score: ${score}]`);
       console.log(`   Zone: ${entity.zone || 'default'}`);
@@ -397,7 +397,7 @@ async function showEntity(name: string, zone?: string) {
     console.log(`Last read: ${entity.lastRead}`);
     console.log(`Last write: ${entity.lastWrite}`);
     console.log(`Read count: ${entity.readCount}`);
-    console.log(`Relevance score: ${entity.relevanceScore?.toFixed(2) || '1.00'} (higher = more important)`);
+    console.log(`Relevance score: ${typeof entity.relevanceScore === 'number' ? entity.relevanceScore.toFixed(2) : '1.00'} (higher = more important)`);
     console.log('');
     
     console.log('Observations:');
@@ -793,5 +793,5 @@ async function main() {
 // Run the CLI
 main().catch(error => {
   console.error('Error:', (error as Error).message);
-  process.exit(1);
+  process.exit(1); 
 }); 
