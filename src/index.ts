@@ -384,7 +384,8 @@ async function startServer() {
           name: entity.name,
           entityType: entity.entityType,
           observations: entity.observations,
-          isImportant: entity.isImportant
+          isImportant: entity.isImportant,
+          relevanceScore: entity.relevanceScore
         });
         
         createdEntities.push(savedEntity);
@@ -415,7 +416,8 @@ async function startServer() {
           name: entity.name,
           entityType: entity.entityType || existingEntity.entityType,
           observations: entity.observations || existingEntity.observations,
-          isImportant: entity.isImportant !== undefined ? entity.isImportant : existingEntity.isImportant
+          isImportant: entity.isImportant !== undefined ? entity.isImportant : existingEntity.isImportant,
+          relevanceScore: entity.relevanceScore || existingEntity.relevanceScore
         });
         
         updatedEntities.push(updatedEntity);
@@ -589,7 +591,8 @@ async function startServer() {
         name: entity.name,
         entityType: entity.entityType,
         observations: updatedObservations,
-        isImportant: entity.isImportant
+        isImportant: entity.isImportant,
+        relevanceScore: entity.relevanceScore
       });
       
       return formatResponse({
@@ -615,7 +618,8 @@ async function startServer() {
         name: entity.name,
         entityType: entity.entityType,
         observations: entity.observations,
-        isImportant: important
+        isImportant: important,
+        relevanceScore: entity.relevanceScore
       });
       
       return formatResponse({
