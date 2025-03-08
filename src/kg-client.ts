@@ -1,3 +1,5 @@
+// WARNING: no console.log in this file, it will break MCP server. Use console.error instead
+
 import { Client } from '@elastic/elasticsearch';
 import {
   KG_INDEX_CONFIG,
@@ -330,7 +332,7 @@ export class KnowledgeGraphClient {
       
       // Delete relations involving this entity if cascading is enabled
       if (cascadeRelations) {
-        console.log(`Cascading relations for entity ${name} in zone ${actualZone}`);
+        console.error(`Cascading relations for entity ${name} in zone ${actualZone}`);
         
         // First, delete relations within the same zone
         await this.client.deleteByQuery({
@@ -392,7 +394,7 @@ export class KnowledgeGraphClient {
           refresh: true
         });
       } else {
-        console.log(`Skipping relation cascade for entity ${name} in zone ${actualZone}`);
+        console.error(`Skipping relation cascade for entity ${name} in zone ${actualZone}`);
       }
       
       // Delete the entity
@@ -456,7 +458,7 @@ export class KnowledgeGraphClient {
       
       // Otherwise, auto-create the missing entities
       if (!fromEntity) {
-        console.log(`Auto-creating missing entity: ${relation.from} in zone ${actualFromZone}`);
+        console.error(`Auto-creating missing entity: ${relation.from} in zone ${actualFromZone}`);
         const newEntity = {
           type: 'entity',
           name: relation.from,
@@ -479,7 +481,7 @@ export class KnowledgeGraphClient {
       }
       
       if (!toEntity) {
-        console.log(`Auto-creating missing entity: ${relation.to} in zone ${actualToZone}`);
+        console.error(`Auto-creating missing entity: ${relation.to} in zone ${actualToZone}`);
         const newEntity = {
           type: 'entity',
           name: relation.to,
