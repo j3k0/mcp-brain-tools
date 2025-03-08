@@ -62,6 +62,92 @@ We're migrating our knowledge graph "memory" from a single JSON file to Elastics
 - [ ] Add proper error handling
 - [ ] Create a query CLI
 
+## Multi-Zone Feature Fixes
+
+### Critical Issues to Address
+- [ ] **Cross-Zone Search Issue**: Fix search function to properly filter by zone
+  - Update search implementation to add mandatory zone filters at the query level
+  - Ensure zone parameter is respected in all search operations
+  - Add validation to verify zone filtering is working properly
+
+- [ ] **Entity Retrieval Zone Isolation**: Ensure entities are properly isolated by zone
+  - Update getEntity to strictly enforce zone boundaries
+  - Modify open_nodes to respect zone parameters and only retrieve entities from the specified zone
+  - Add zone validation to confirm operations don't cross zone boundaries
+
+- [ ] **Fix Empty Recent Results**: Update get_recent to be zone-aware
+  - Modify getRecentEntities to filter by zone
+  - Ensure all lastRead/lastWrite tracking respects zone boundaries
+  - Add zone parameter to recency tracking functions
+
+### Implementation Tasks
+- [ ] **Update search method in KnowledgeGraphClient**:
+  ```typescript
+  // Add mandatory zone filter to all entity queries
+  query.bool.must.push({
+    term: {
+      zone: actualZone
+    }
+  });
+  ```
+
+- [ ] **Fix getEntity and related methods**:
+  ```typescript
+  // Ensure zone filtering in entity retrieval
+  const response = await this.client.search({
+    index: indexName,
+    body: {
+      query: {
+        bool: {
+          must: [
+            { term: { name: name } },
+            { term: { zone: actualZone } }
+          ]
+        }
+      }
+    }
+  });
+  ```
+
+- [ ] **Update getRecentEntities method**:
+  ```typescript
+  // Add zone filtering to recent entities query
+  const response = await this.client.search({
+    index: indexName,
+    body: {
+      query: {
+        bool: {
+          must: [
+            { term: { type: 'entity' } },
+            { term: { zone: actualZone } }
+          ]
+        }
+      },
+      sort: [
+        { lastRead: { order: 'desc' } }
+      ],
+      size: limit
+    }
+  });
+  ```
+
+- [ ] **Create comprehensive test suite for zone functionality**:
+  - Test zone isolation for entity creation and retrieval
+  - Test zone-specific search operations
+  - Test cross-zone relations
+  - Test zone filtering in get_recent operations
+
+- [ ] **Review and update all client-facing API endpoints**:
+  - Ensure all MCP tools properly handle the zone parameter
+  - Add validation to ensure zone parameters are properly used
+  - Add warning logs when operations might cross zone boundaries
+
+### Validation Plan
+- [ ] Create test script to verify zone isolation
+- [ ] Add test cases for all reported issues
+- [ ] Implement automated tests for zone boundary enforcement
+- [ ] Document zone behavior clearly
+
 ## Future Enhancements
 - Real-time analytics dashboard
 - Enhanced visualization capabilities
