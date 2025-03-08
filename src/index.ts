@@ -168,6 +168,11 @@ async function startServer() {
               memory_zone: {
                 type: "string",
                 description: "Optional memory zone specifier. If provided, entities will be deleted from this zone."
+              },
+              cascade_relations: {
+                type: "boolean",
+                description: "Whether to delete relations involving these entities (default: true)",
+                default: true
               }
             },
             required: ["names"],
@@ -199,6 +204,11 @@ async function startServer() {
               memory_zone: {
                 type: "string",
                 description: "Optional default memory zone specifier. Used if a relation doesn't specify fromZone or toZone."
+              },
+              auto_create_missing_entities: {
+                type: "boolean",
+                description: "Whether to automatically create missing entities in the relations (default: true)",
+                default: true
               }
             },
             required: ["relations"],
@@ -237,13 +247,13 @@ async function startServer() {
         },
         {
           name: "search_nodes",
-          description: "Search for entities in knowledge graph (memory) using Elasticsearch query capabilities. Returns matching entities and their relations. Supports advanced Elasticsearch query syntax including: Boolean operators (AND, OR, NOT), fuzzy matching (~N), proximity searches (\"phrase\"~N), and boosting (^N). Examples: 'JC AND Hoelt' for Boolean AND; 'Thea OR Souad' for Boolean OR; 'Hoelt NOT JC' for Boolean NOT; 'Helt~1' for fuzzy matching; '\"technical issues\"~2' for proximity searches; 'JC^3 Hoelt' for boosting specific terms.",
+          description: "Search for entities in knowledge graph (memory) using Elasticsearch query capabilities. Returns matching entities and their relations. Supports advanced Elasticsearch query syntax including: Boolean operators (AND, OR, NOT), fuzzy matching (~N), proximity searches (\"phrase\"~N), and boosting (^N). Examples: 'JC AND Hoelt' for Boolean AND; 'Thea OR Souad' for Boolean OR; 'Hoelt NOT JC' for Boolean NOT; 'Helt~1' for fuzzy matching on both entity names and observation content; '\"technical issues\"~2' for proximity searches; 'JC^3 Hoelt' for boosting specific terms.",
           inputSchema: {
             type: "object",
             properties: {
               query: {
                 type: "string",
-                description: "Elasticsearch query (supports boolean operators, wildcards, fuzzy matching)"
+                description: "Elasticsearch query (supports boolean operators, wildcards, fuzzy matching with tilde notation on all fields including observations)"
               },
               entityTypes: {
                 type: "array",
@@ -333,6 +343,15 @@ async function startServer() {
               important: {
                 type: "boolean",
                 description: "Set as important (true - multiply relevance by 10) or not (false - divide relevance by 10)"
+              },
+              memory_zone: {
+                type: "string",
+                description: "Optional memory zone specifier. If provided, entity will be marked in this zone."
+              },
+              auto_create: {
+                type: "boolean",
+                description: "Whether to automatically create the entity if it doesn't exist (default: false)",
+                default: false
               }
             },
             required: ["name", "important"],
@@ -401,23 +420,37 @@ async function startServer() {
       const entities = params.entities;
       const zone = params.memory_zone;
       
-      // First, check if any entities already exist
+      // First, check if any entities already exist or have empty names
       const conflictingEntities = [];
+      const invalidEntities = [];
+      
       for (const entity of entities) {
+        // Check for empty names
+        if (!entity.name || entity.name.trim() === '') {
+          invalidEntities.push({
+            name: "[empty]",
+            reason: "Entity name cannot be empty"
+          });
+          continue;
+        }
+        
         const existingEntity = await kgClient.getEntity(entity.name, zone);
         if (existingEntity) {
           conflictingEntities.push(entity.name);
         }
       }
       
-      // If there are conflicts, reject the entire operation
-      if (conflictingEntities.length > 0) {
+      // If there are conflicts or invalid entities, reject the operation
+      if (conflictingEntities.length > 0 || invalidEntities.length > 0) {
         const zoneMsg = zone ? ` in zone "${zone}"` : "";
         return formatResponse({
           success: false,
-          error: `Entity creation failed: Conflicts detected${zoneMsg}`,
-          conflicts: conflictingEntities,
-          message: "Please use update_entities for modifying existing entities."
+          error: `Entity creation failed${zoneMsg}`,
+          conflicts: conflictingEntities.length > 0 ? conflictingEntities : undefined,
+          invalidEntities: invalidEntities.length > 0 ? invalidEntities : undefined,
+          message: conflictingEntities.length > 0 ? 
+            "Please use update_entities for modifying existing entities." : 
+            "Please provide valid entity names for all entities."
         });
       }
       
@@ -478,12 +511,38 @@ async function startServer() {
     else if (toolName === "delete_entities") {
       const names = params.names;
       const zone = params.memory_zone;
+      const cascadeRelations = params.cascade_relations !== false; // Default to true
       const results = [];
+      const invalidNames = [];
       
-      // Delete each entity individually
+      // Validate names before attempting deletion
       for (const name of names) {
-        const success = await kgClient.deleteEntity(name, zone);
-        results.push({ name, deleted: success });
+        if (!name || name.trim() === '') {
+          invalidNames.push("[empty]");
+          continue;
+        }
+      }
+      
+      // If there are invalid names, reject those operations
+      if (invalidNames.length > 0) {
+        return formatResponse({
+          success: false,
+          error: "Entity deletion failed for some entities",
+          invalidNames,
+          message: "Entity names cannot be empty"
+        });
+      }
+      
+      // Delete each valid entity individually
+      for (const name of names) {
+        try {
+          const success = await kgClient.deleteEntity(name, zone, {
+            cascadeRelations
+          });
+          results.push({ name, deleted: success });
+        } catch (error) {
+          results.push({ name, deleted: false, error: error.message });
+        }
       }
       
       return formatResponse({
@@ -494,26 +553,53 @@ async function startServer() {
     else if (toolName === "create_relations") {
       const relations = params.relations;
       const defaultZone = params.memory_zone;
+      const autoCreateMissingEntities = params.auto_create_missing_entities !== false; // Default to true for backward compatibility
       const savedRelations = [];
+      const failedRelations = [];
       
       for (const relation of relations) {
         const fromZone = relation.fromZone || defaultZone;
         const toZone = relation.toZone || defaultZone;
         
-        const savedRelation = await kgClient.saveRelation({
-          from: relation.from,
-          to: relation.to,
-          relationType: relation.type
-        }, fromZone, toZone);
-        
-        savedRelations.push(savedRelation);
+        try {
+          const savedRelation = await kgClient.saveRelation({
+            from: relation.from,
+            to: relation.to,
+            relationType: relation.type
+          }, fromZone, toZone, { autoCreateMissingEntities });
+          
+          savedRelations.push(savedRelation);
+        } catch (error) {
+          failedRelations.push({
+            relation,
+            error: error.message
+          });
+        }
+      }
+      
+      // If there were any failures, include them in the response
+      if (failedRelations.length > 0) {
+        return formatResponse({
+          success: savedRelations.length > 0,
+          relations: savedRelations.map(r => ({
+            from: r.from,
+            to: r.to,
+            type: r.relationType,
+            fromZone: r.fromZone,
+            toZone: r.toZone
+          })),
+          failedRelations
+        });
       }
       
       return formatResponse({
+        success: true,
         relations: savedRelations.map(r => ({
           from: r.from,
           to: r.to,
-          type: r.relationType
+          type: r.relationType,
+          fromZone: r.fromZone,
+          toZone: r.toZone
         }))
       });
     }
@@ -587,7 +673,9 @@ async function startServer() {
       const formattedRelations = relations.map(r => ({
         from: r.from,
         to: r.to,
-        type: r.relationType
+        type: r.relationType,
+        fromZone: r.fromZone,
+        toZone: r.toZone
       }));
       
       return formatResponse({ entities, relations: formattedRelations });
@@ -620,7 +708,9 @@ async function startServer() {
       const formattedRelations = relations.map(r => ({
         from: r.from,
         to: r.to,
-        type: r.relationType
+        type: r.relationType,
+        fromZone: r.fromZone,
+        toZone: r.toZone
       }));
       
       return formatResponse({ entities: formattedEntities, relations: formattedRelations });
@@ -653,25 +743,27 @@ async function startServer() {
       const name = params.name;
       const important = params.important;
       const zone = params.memory_zone;
+      const autoCreate = params.auto_create === true;
       
-      // Get existing entity
-      const entity = await kgClient.getEntity(name, zone);
-      if (!entity) {
+      try {
+        // Mark the entity as important, with auto-creation if specified
+        const updatedEntity = await kgClient.markImportant(name, important, zone, {
+          autoCreateMissingEntities: autoCreate
+        });
+        
+        return formatResponse({
+          success: true,
+          entity: updatedEntity,
+          auto_created: autoCreate && !(await kgClient.getEntity(name, zone))
+        });
+      } catch (error) {
         const zoneMsg = zone ? ` in zone "${zone}"` : "";
         return formatResponse({
           success: false,
           error: `Entity "${name}" not found${zoneMsg}`,
-          message: "Please create the entity before marking it as important."
+          message: "Please create the entity before marking it as important, or set auto_create to true."
         });
       }
-      
-      // Mark the entity as important
-      const updatedEntity = await kgClient.markImportant(name, important, zone);
-      
-      return formatResponse({
-        success: true,
-        entity: updatedEntity
-      });
     }
     else if (toolName === "get_recent") {
       const limit = params.limit || 20;
