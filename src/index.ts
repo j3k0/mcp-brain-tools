@@ -382,6 +382,160 @@ async function startServer() {
             additionalProperties: false,
             "$schema": "http://json-schema.org/draft-07/schema#"
           }
+        },
+        {
+          name: "list_zones",
+          description: "List all available memory zones",
+          inputSchema: {
+            type: "object",
+            properties: {}
+          }
+        },
+        {
+          name: "create_zone",
+          description: "Create a new memory zone",
+          inputSchema: {
+            type: "object",
+            properties: {
+              name: {
+                type: "string",
+                description: "Name of the zone to create"
+              },
+              description: {
+                type: "string",
+                description: "Optional description of the zone"
+              }
+            },
+            required: ["name"]
+          }
+        },
+        {
+          name: "delete_zone",
+          description: "Delete a memory zone and all its data",
+          inputSchema: {
+            type: "object",
+            properties: {
+              name: {
+                type: "string",
+                description: "Name of the zone to delete"
+              },
+              confirm: {
+                type: "boolean",
+                description: "Confirmation flag, must be set to true to delete zone",
+                default: false
+              }
+            },
+            required: ["name", "confirm"]
+          }
+        },
+        {
+          name: "copy_entities",
+          description: "Copy entities from one zone to another",
+          inputSchema: {
+            type: "object",
+            properties: {
+              names: {
+                type: "array",
+                items: { type: "string" },
+                description: "Array of entity names to copy"
+              },
+              source_zone: {
+                type: "string",
+                description: "Source zone to copy from"
+              },
+              target_zone: {
+                type: "string",
+                description: "Target zone to copy to"
+              },
+              copy_relations: {
+                type: "boolean",
+                description: "Whether to copy relations involving these entities (default: true)",
+                default: true
+              },
+              overwrite: {
+                type: "boolean",
+                description: "Whether to overwrite entities if they already exist in target zone (default: false)",
+                default: false
+              }
+            },
+            required: ["names", "source_zone", "target_zone"]
+          }
+        },
+        {
+          name: "move_entities",
+          description: "Move entities from one zone to another",
+          inputSchema: {
+            type: "object",
+            properties: {
+              names: {
+                type: "array",
+                items: { type: "string" },
+                description: "Array of entity names to move"
+              },
+              source_zone: {
+                type: "string",
+                description: "Source zone to move from"
+              },
+              target_zone: {
+                type: "string",
+                description: "Target zone to move to"
+              },
+              move_relations: {
+                type: "boolean",
+                description: "Whether to move relations involving these entities (default: true)",
+                default: true
+              },
+              overwrite: {
+                type: "boolean",
+                description: "Whether to overwrite entities if they already exist in target zone (default: false)",
+                default: false
+              }
+            },
+            required: ["names", "source_zone", "target_zone"]
+          }
+        },
+        {
+          name: "merge_zones",
+          description: "Merge two or more zones into a target zone",
+          inputSchema: {
+            type: "object",
+            properties: {
+              source_zones: {
+                type: "array",
+                items: { type: "string" },
+                description: "Array of source zone names to merge from"
+              },
+              target_zone: {
+                type: "string",
+                description: "Target zone to merge into"
+              },
+              delete_source_zones: {
+                type: "boolean",
+                description: "Whether to delete source zones after merging (default: false)",
+                default: false
+              },
+              overwrite_conflicts: {
+                type: "string",
+                enum: ["skip", "overwrite", "rename"],
+                description: "How to handle entity name conflicts (default: 'skip')",
+                default: "skip"
+              }
+            },
+            required: ["source_zones", "target_zone"]
+          }
+        },
+        {
+          name: "zone_stats",
+          description: "Get statistics for a memory zone",
+          inputSchema: {
+            type: "object",
+            properties: {
+              zone: {
+                type: "string",
+                description: "Optional zone name to get statistics for, uses default zone if not specified"
+              }
+            }
+          }
         }
       ]
     };
@@ -780,6 +934,182 @@ async function startServer() {
         })),
         total: recentEntities.length
       });
+    }
+    else if (toolName === "list_zones") {
+      const zones = await kgClient.listMemoryZones();
+      
+      return formatResponse({
+        zones: zones.map(zone => ({
+          name: zone.name,
+          description: zone.description,
+          created_at: zone.createdAt,
+          last_modified: zone.lastModified
+        }))
+      });
+    }
+    else if (toolName === "create_zone") {
+      const name = params.name;
+      const description = params.description;
+      
+      try {
+        await kgClient.addMemoryZone(name, description);
+        
+        return formatResponse({
+          success: true,
+          zone: name,
+          message: `Zone "${name}" created successfully`
+        });
+      } catch (error) {
+        return formatResponse({
+          success: false,
+          error: `Failed to create zone: ${(error as Error).message}`
+        });
+      }
+    }
+    else if (toolName === "delete_zone") {
+      const name = params.name;
+      const confirm = params.confirm === true;
+      
+      if (!confirm) {
+        return formatResponse({
+          success: false,
+          error: "Confirmation required. Set confirm=true to proceed with deletion."
+        });
+      }
+      
+      try {
+        const result = await kgClient.deleteMemoryZone(name);
+        
+        if (result) {
+          return formatResponse({
+            success: true,
+            message: `Zone "${name}" deleted successfully`
+          });
+        } else {
+          return formatResponse({
+            success: false,
+            error: `Failed to delete zone "${name}"`
+          });
+        }
+      } catch (error) {
+        return formatResponse({
+          success: false,
+          error: `Error deleting zone: ${(error as Error).message}`
+        });
+      }
+    }
+    else if (toolName === "copy_entities") {
+      const names = params.names;
+      const sourceZone = params.source_zone;
+      const targetZone = params.target_zone;
+      const copyRelations = params.copy_relations !== false;
+      const overwrite = params.overwrite === true;
+      
+      try {
+        const result = await kgClient.copyEntitiesBetweenZones(
+          names,
+          sourceZone,
+          targetZone,
+          {
+            copyRelations,
+            overwrite
+          }
+        );
+        
+        return formatResponse({
+          success: result.entitiesCopied.length > 0,
+          entities_copied: result.entitiesCopied,
+          entities_skipped: result.entitiesSkipped,
+          relations_copied: result.relationsCopied
+        });
+      } catch (error) {
+        return formatResponse({
+          success: false,
+          error: `Error copying entities: ${(error as Error).message}`
+        });
+      }
+    }
+    else if (toolName === "move_entities") {
+      const names = params.names;
+      const sourceZone = params.source_zone;
+      const targetZone = params.target_zone;
+      const moveRelations = params.move_relations !== false;
+      const overwrite = params.overwrite === true;
+      
+      try {
+        const result = await kgClient.moveEntitiesBetweenZones(
+          names,
+          sourceZone,
+          targetZone,
+          {
+            moveRelations,
+            overwrite
+          }
+        );
+        
+        return formatResponse({
+          success: result.entitiesMoved.length > 0,
+          entities_moved: result.entitiesMoved,
+          entities_skipped: result.entitiesSkipped,
+          relations_moved: result.relationsMoved
+        });
+      } catch (error) {
+        return formatResponse({
+          success: false,
+          error: `Error moving entities: ${(error as Error).message}`
+        });
+      }
+    }
+    else if (toolName === "merge_zones") {
+      const sourceZones = params.source_zones;
+      const targetZone = params.target_zone;
+      const deleteSourceZones = params.delete_source_zones === true;
+      const overwriteConflicts = params.overwrite_conflicts || 'skip';
+      
+      try {
+        const result = await kgClient.mergeZones(
+          sourceZones,
+          targetZone,
+          {
+            deleteSourceZones,
+            overwriteConflicts: overwriteConflicts as 'skip' | 'overwrite' | 'rename'
+          }
+        );
+        
+        return formatResponse({
+          success: result.mergedZones.length > 0,
+          merged_zones: result.mergedZones,
+          failed_zones: result.failedZones,
+          entities_copied: result.entitiesCopied,
+          entities_skipped: result.entitiesSkipped,
+          relations_copied: result.relationsCopied
+        });
+      } catch (error) {
+        return formatResponse({
+          success: false,
+          error: `Error merging zones: ${(error as Error).message}`
+        });
+      }
+    }
+    else if (toolName === "zone_stats") {
+      const zone = params.zone;
+      
+      try {
+        const stats = await kgClient.getMemoryZoneStats(zone);
+        
+        return formatResponse({
+          zone: stats.zone,
+          entity_count: stats.entityCount,
+          relation_count: stats.relationCount,
+          entity_types: stats.entityTypes,
+          relation_types: stats.relationTypes
+        });
+      } catch (error) {
+        return formatResponse({
+          success: false,
+          error: `Error getting zone stats: ${(error as Error).message}`
+        });
+      }
     }
   });
 

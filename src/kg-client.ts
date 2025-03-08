@@ -1651,4 +1651,414 @@ export class KnowledgeGraphClient {
       .filter((hit: any) => hit._source.type === 'entity')
       .map((hit: any) => hit._source);
   }
+
+  /**
+   * Copy entities from one zone to another
+   * @param entityNames Array of entity names to copy
+   * @param sourceZone Source zone to copy from
+   * @param targetZone Target zone to copy to
+   * @param options Optional configuration
+   * @param options.copyRelations Whether to copy relations involving these entities (default: true)
+   * @param options.overwrite Whether to overwrite entities if they already exist in target zone (default: false)
+   * @returns Result of the copy operation
+   */
+  async copyEntitiesBetweenZones(
+    entityNames: string[],
+    sourceZone: string,
+    targetZone: string,
+    options?: {
+      copyRelations?: boolean;
+      overwrite?: boolean;
+    }
+  ): Promise<{
+    entitiesCopied: string[];
+    entitiesSkipped: { name: string; reason: string }[];
+    relationsCopied: number;
+  }> {
+    if (sourceZone === targetZone) {
+      throw new Error('Source and target zones must be different');
+    }
+    
+    // Default options
+    const copyRelations = options?.copyRelations !== false;
+    const overwrite = options?.overwrite === true;
+    
+    await this.initialize(sourceZone);
+    await this.initialize(targetZone);
+    
+    const result = {
+      entitiesCopied: [] as string[],
+      entitiesSkipped: [] as { name: string; reason: string }[],
+      relationsCopied: 0
+    };
+    
+    // Get entities from source zone
+    for (const name of entityNames) {
+      // Get the entity from source zone
+      const entity = await this.getEntityWithoutUpdatingLastRead(name, sourceZone);
+      if (!entity) {
+        result.entitiesSkipped.push({ 
+          name, 
+          reason: `Entity not found in source zone '${sourceZone}'` 
+        });
+        continue;
+      }
+      
+      // Check if entity exists in target zone
+      const existingEntity = await this.getEntityWithoutUpdatingLastRead(name, targetZone);
+      if (existingEntity && !overwrite) {
+        result.entitiesSkipped.push({ 
+          name, 
+          reason: `Entity already exists in target zone '${targetZone}' and overwrite is disabled` 
+        });
+        continue;
+      }
+      
+      // Copy the entity to target zone
+      const { ...entityCopy } = entity;
+      delete entityCopy.zone; // Zone will be set by saveEntity
+      
+      try {
+        await this.saveEntity(entityCopy, targetZone);
+        result.entitiesCopied.push(name);
+      } catch (error) {
+        result.entitiesSkipped.push({ 
+          name, 
+          reason: `Error copying entity: ${(error as Error).message}` 
+        });
+        continue;
+      }
+    }
+    
+    // Copy relations if requested
+    if (copyRelations && result.entitiesCopied.length > 0) {
+      // Get all relations for these entities in source zone
+      const { relations } = await this.getRelationsForEntities(result.entitiesCopied, sourceZone);
+      
+      // Filter to only include relations where both entities were copied
+      // or relations between copied entities and entities that already exist in target zone
+      const relationsToCreate: ESRelation[] = [];
+      
+      for (const relation of relations) {
+        let fromExists = result.entitiesCopied.includes(relation.from);
+        let toExists = result.entitiesCopied.includes(relation.to);
+        
+        // If one side of the relation wasn't copied, check if it exists in target zone
+        if (!fromExists) {
+          const fromEntityInTarget = await this.getEntityWithoutUpdatingLastRead(relation.from, targetZone);
+          fromExists = !!fromEntityInTarget;
+        }
+        
+        if (!toExists) {
+          const toEntityInTarget = await this.getEntityWithoutUpdatingLastRead(relation.to, targetZone);
+          toExists = !!toEntityInTarget;
+        }
+        
+        // Only create relations where both sides exist
+        if (fromExists && toExists) {
+          relationsToCreate.push(relation);
+        }
+      }
+      
+      // Save the filtered relations
+      for (const relation of relationsToCreate) {
+        try {
+          await this.saveRelation({
+            from: relation.from,
+            to: relation.to,
+            relationType: relation.relationType
+          }, targetZone, targetZone);
+          
+          result.relationsCopied++;
+        } catch (error) {
+          console.error(`Error copying relation from ${relation.from} to ${relation.to}: ${(error as Error).message}`);
+        }
+      }
+    }
+    
+    return result;
+  }
+  
+  /**
+   * Move entities from one zone to another (copy + delete from source)
+   * @param entityNames Array of entity names to move
+   * @param sourceZone Source zone to move from
+   * @param targetZone Target zone to move to
+   * @param options Optional configuration
+   * @param options.moveRelations Whether to move relations involving these entities (default: true)
+   * @param options.overwrite Whether to overwrite entities if they already exist in target zone (default: false)
+   * @returns Result of the move operation
+   */
+  async moveEntitiesBetweenZones(
+    entityNames: string[],
+    sourceZone: string,
+    targetZone: string,
+    options?: {
+      moveRelations?: boolean;
+      overwrite?: boolean;
+    }
+  ): Promise<{
+    entitiesMoved: string[];
+    entitiesSkipped: { name: string; reason: string }[];
+    relationsMoved: number;
+  }> {
+    if (sourceZone === targetZone) {
+      throw new Error('Source and target zones must be different');
+    }
+    
+    // Default options
+    const moveRelations = options?.moveRelations !== false;
+    
+    // First copy the entities
+    const copyResult = await this.copyEntitiesBetweenZones(
+      entityNames,
+      sourceZone,
+      targetZone,
+      {
+        copyRelations: moveRelations,
+        overwrite: options?.overwrite
+      }
+    );
+    
+    const result = {
+      entitiesMoved: [] as string[],
+      entitiesSkipped: copyResult.entitiesSkipped,
+      relationsMoved: copyResult.relationsCopied
+    };
+    
+    // Delete copied entities from source zone
+    for (const name of copyResult.entitiesCopied) {
+      try {
+        // Don't cascade relations when deleting from source, as we've already copied them
+        await this.deleteEntity(name, sourceZone, { cascadeRelations: false });
+        result.entitiesMoved.push(name);
+      } catch (error) {
+        // If deletion fails, add to skipped list but keep the entity in the moved list
+        // since it was successfully copied
+        result.entitiesSkipped.push({ 
+          name, 
+          reason: `Entity was copied but could not be deleted from source: ${(error as Error).message}` 
+        });
+      }
+    }
+    
+    return result;
+  }
+  
+  /**
+   * Merge two or more zones into a target zone
+   * @param sourceZones Array of source zone names to merge from 
+   * @param targetZone Target zone to merge into
+   * @param options Optional configuration
+   * @param options.deleteSourceZones Whether to delete source zones after merging (default: false)
+   * @param options.overwriteConflicts How to handle entity name conflicts (default: 'skip')
+   * @returns Result of the merge operation
+   */
+  async mergeZones(
+    sourceZones: string[],
+    targetZone: string,
+    options?: {
+      deleteSourceZones?: boolean;
+      overwriteConflicts?: 'skip' | 'overwrite' | 'rename';
+    }
+  ): Promise<{
+    mergedZones: string[];
+    failedZones: { zone: string; reason: string }[];
+    entitiesCopied: number;
+    entitiesSkipped: number;
+    relationsCopied: number;
+  }> {
+    // Validate parameters
+    if (sourceZones.includes(targetZone)) {
+      throw new Error('Target zone cannot be included in source zones');
+    }
+    
+    if (sourceZones.length === 0) {
+      throw new Error('At least one source zone must be specified');
+    }
+    
+    // Default options
+    const deleteSourceZones = options?.deleteSourceZones === true;
+    const overwriteConflicts = options?.overwriteConflicts || 'skip';
+    
+    // Initialize target zone
+    await this.initialize(targetZone);
+    
+    const result = {
+      mergedZones: [] as string[],
+      failedZones: [] as { zone: string; reason: string }[],
+      entitiesCopied: 0,
+      entitiesSkipped: 0,
+      relationsCopied: 0
+    };
+    
+    // Process each source zone
+    for (const sourceZone of sourceZones) {
+      try {
+        // Get all entities from source zone
+        const allEntities = await this.searchEntities({
+          query: '*',
+          limit: 10000,
+          zone: sourceZone
+        });
+        
+        if (allEntities.length === 0) {
+          result.failedZones.push({
+            zone: sourceZone,
+            reason: 'Zone has no entities'
+          });
+          continue;
+        }
+        
+        // Extract entity names
+        const entityNames = allEntities.map(entity => entity.name);
+        
+        // Process according to conflict resolution strategy
+        if (overwriteConflicts === 'rename') {
+          // For 'rename' strategy, we need to check each entity and rename if necessary
+          for (const entity of allEntities) {
+            const existingEntity = await this.getEntityWithoutUpdatingLastRead(entity.name, targetZone);
+            
+            if (existingEntity) {
+              // Entity exists in target zone, generate a new name
+              const newName = `${entity.name}_from_${sourceZone}`;
+              
+              // Create a copy with the new name
+              const entityCopy = { ...entity, name: newName };
+              delete entityCopy.zone; // Zone will be set by saveEntity
+              
+              try {
+                await this.saveEntity(entityCopy, targetZone);
+                result.entitiesCopied++;
+              } catch (error) {
+                result.entitiesSkipped++;
+                console.error(`Error copying entity ${entity.name} with new name ${newName}: ${(error as Error).message}`);
+              }
+            } else {
+              // Entity doesn't exist, copy as is
+              const entityCopy = { ...entity };
+              delete entityCopy.zone; // Zone will be set by saveEntity
+              
+              try {
+                await this.saveEntity(entityCopy, targetZone);
+                result.entitiesCopied++;
+              } catch (error) {
+                result.entitiesSkipped++;
+                console.error(`Error copying entity ${entity.name}: ${(error as Error).message}`);
+              }
+            }
+          }
+          
+          // Now copy relations, adjusting for renamed entities
+          const { relations } = await this.getRelationsForEntities(entityNames, sourceZone);
+          
+          for (const relation of relations) {
+            try {
+              // Check if entities were renamed
+              let fromName = relation.from;
+              let toName = relation.to;
+              
+              const fromEntityInTarget = await this.getEntityWithoutUpdatingLastRead(fromName, targetZone);
+              if (!fromEntityInTarget) {
+                // Check if it was renamed
+                const renamedFromName = `${fromName}_from_${sourceZone}`;
+                const renamedFromEntityInTarget = await this.getEntityWithoutUpdatingLastRead(renamedFromName, targetZone);
+                if (renamedFromEntityInTarget) {
+                  fromName = renamedFromName;
+                }
+              }
+              
+              const toEntityInTarget = await this.getEntityWithoutUpdatingLastRead(toName, targetZone);
+              if (!toEntityInTarget) {
+                // Check if it was renamed
+                const renamedToName = `${toName}_from_${sourceZone}`;
+                const renamedToEntityInTarget = await this.getEntityWithoutUpdatingLastRead(renamedToName, targetZone);
+                if (renamedToEntityInTarget) {
+                  toName = renamedToName;
+                }
+              }
+              
+              // Only create relation if both entities exist
+              if (await this.getEntityWithoutUpdatingLastRead(fromName, targetZone) && 
+                  await this.getEntityWithoutUpdatingLastRead(toName, targetZone)) {
+                await this.saveRelation({
+                  from: fromName,
+                  to: toName,
+                  relationType: relation.relationType
+                }, targetZone, targetZone);
+                
+                result.relationsCopied++;
+              }
+            } catch (error) {
+              console.error(`Error copying relation from ${relation.from} to ${relation.to}: ${(error as Error).message}`);
+            }
+          }
+        } else {
+          // For 'skip' or 'overwrite' strategy, use copyEntitiesBetweenZones
+          const copyResult = await this.copyEntitiesBetweenZones(
+            entityNames,
+            sourceZone,
+            targetZone,
+            {
+              copyRelations: true,
+              overwrite: overwriteConflicts === 'overwrite'
+            }
+          );
+          
+          result.entitiesCopied += copyResult.entitiesCopied.length;
+          result.entitiesSkipped += copyResult.entitiesSkipped.length;
+          result.relationsCopied += copyResult.relationsCopied;
+        }
+        
+        // Mark as successfully merged
+        result.mergedZones.push(sourceZone);
+        
+        // Delete source zone if requested
+        if (deleteSourceZones) {
+          await this.deleteMemoryZone(sourceZone);
+        }
+      } catch (error) {
+        result.failedZones.push({
+          zone: sourceZone,
+          reason: (error as Error).message
+        });
+      }
+    }
+    
+    return result;
+  }
+
+  /**
+   * Search for entities by name or other attributes
+   * @param params Search parameters
+   * @returns Array of matching entities
+   */
+  async searchEntities(params: {
+    query: string;
+    entityTypes?: string[];
+    limit?: number;
+    includeObservations?: boolean;
+    zone?: string;
+  }): Promise<ESEntity[]> {
+    // Use existing search method with appropriate parameters
+    const searchResponse = await this.search({
+      query: params.query,
+      entityTypes: params.entityTypes,
+      limit: params.limit,
+      offset: 0,
+      zone: params.zone
+    });
+    
+    // Extract entities from the search response
+    const entities: ESEntity[] = [];
+    if (searchResponse && searchResponse.hits && searchResponse.hits.hits) {
+      for (const hit of searchResponse.hits.hits) {
+        if (hit._source && hit._source.type === 'entity') {
+          entities.push(hit._source as ESEntity);
+        }
+      }
+    }
+    
+    return entities;
+  }
 } 
