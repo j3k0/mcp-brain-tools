@@ -166,7 +166,7 @@ async function searchGraph(query: string) {
           // If 'from' entity is not in our set, fetch and store it
           if (!entityNameSet.has(relation.from)) {
             if (!relatedEntities.has(relation.from)) {
-              const entity = await kgClient.getEntity(relation.from);
+              const entity = await kgClient.getEntityWithoutUpdatingLastRead(relation.from);
               if (entity) relatedEntities.set(relation.from, entity);
             }
           }
@@ -174,7 +174,7 @@ async function searchGraph(query: string) {
           // If 'to' entity is not in our set, fetch and store it
           if (!entityNameSet.has(relation.to)) {
             if (!relatedEntities.has(relation.to)) {
-              const entity = await kgClient.getEntity(relation.to);
+              const entity = await kgClient.getEntityWithoutUpdatingLastRead(relation.to);
               if (entity) relatedEntities.set(relation.to, entity);
             }
           }
@@ -278,7 +278,7 @@ async function showEntity(name: string) {
     await kgClient.initialize();
     
     // Get entity
-    const entity = await kgClient.getEntity(name);
+    const entity = await kgClient.getEntityWithoutUpdatingLastRead(name);
     if (!entity) {
       console.error(`Entity "${name}" not found`);
       process.exit(1);

@@ -81,6 +81,29 @@ export class KnowledgeGraphClient {
   }
 
   /**
+   * Get an entity by name without updating lastRead timestamp
+   * @param name Entity name
+   */
+  async getEntityWithoutUpdatingLastRead(name: string): Promise<ESEntity | null> {
+    if (!this.initialized) await this.initialize();
+
+    try {
+      const result = await this.client.get<ESEntity>({
+        index: KG_INDEX,
+        id: `entity:${name}`
+      });
+      
+      // Return entity without updating lastRead
+      return result._source;
+    } catch (error) {
+      if ((error as any).statusCode === 404) {
+        return null;
+      }
+      throw error;
+    }
+  }
+
+  /**
    * Get an entity by name
    * @param name Entity name
    */
