@@ -247,59 +247,36 @@ async function startServer() {
         },
         {
           name: "search_nodes",
-          description: "Search for entities in the knowledge graph (memory) using powerful query capabilities. Returns matching entities and their relations.\n\n" +
-          "SEARCH QUERY SYNTAX:\n" +
-          "1. Simple Queries: Single words or phrases match across entity names, types, and observations.\n" +
-          "   Example: 'meeting' finds entities containing this word in any field.\n\n" +
-          "2. Boolean Operators:\n" +
-          "   - AND: Requires both terms to be present.\n" +
-          "     Example: 'marketing AND budget' finds entities containing both words.\n" +
-          "   - OR: Matches if either term is present.\n" +
-          "     Example: 'John OR Jane' finds entities containing either name.\n" +
-          "   - NOT: Excludes entities containing the term.\n" +
-          "     Example: 'meeting NOT canceled' finds meetings that weren't canceled.\n" +
-          "   - Parentheses for grouping: '(marketing OR sales) AND budget'\n\n" +
-          "3. Fuzzy Matching: Append ~ to a term to find similar spellings.\n" +
-          "   Example: 'Jonson~' matches 'Johnson', 'Jonsen', etc.\n" +
-          "   Example: 'Smth~2' matches terms with up to 2 character changes.\n\n" +
-          "4. Phrase Searches: Use quotes for exact phrases, add ~ for proximity.\n" +
-          "   Example: '\"project plan\"' finds the exact phrase.\n" +
-          "   Example: '\"project plan\"~3' finds words within 3 positions of each other.\n\n" +
-          "5. Field Boosting: Prioritize matches in certain fields using ^.\n" +
-          "   Example: 'meeting^3 agenda' gives 'meeting' 3x more importance.\n\n" +
-          "6. Wildcards: Use * for multiple characters, ? for single character.\n" +
-          "   Example: 'meet*' matches 'meeting', 'meets', etc.\n" +
-          "   Example: 'Jo?n' matches 'John', 'Joan', etc.\n\n" +
-          "All searches automatically apply zone isolation and respect entityType filters if provided.",
+          description: "Search entities using ElasticSearch query syntax. Supports boolean operators (AND, OR, NOT), fuzzy matching (~), phrases (\"term\"), proximity (\"terms\"~N), wildcards (*, ?), and boosting (^N). Examples: 'meeting AND notes', 'Jon~', '\"project plan\"~2'. All searches respect zone isolation.",
           inputSchema: {
             type: "object",
             properties: {
               query: {
                 type: "string",
-                description: "Search query string using the syntax described above. Use '*' to match all entities."
+                description: "ElasticSearch query string. Use '*' for all entities."
               },
               entityTypes: {
                 type: "array",
                 items: {type: "string"},
-                description: "Optional. Filter results to include only entities of specific types. Multiple types create an OR condition (entities matching ANY of the specified types will be included)."
+                description: "Filter to specific entity types (OR condition if multiple)."
               },
               limit: {
                 type: "integer",
-                description: "Optional. Maximum number of results to return. Default: 20 if includeObservations is false, 5 if true. Higher values may impact performance."
+                description: "Max results (default: 20, or 5 with observations)."
               },
               sortBy: {
                 type: "string",
                 enum: ["relevance", "recency", "importance"],
-                description: "Optional. Sort order for results: 'relevance' (default) sorts by match quality, 'recency' by last access time, 'importance' by marked importance and relevance score."
+                description: "Sort by match quality, access time, or importance."
               },
               includeObservations: {
                 type: "boolean",
-                description: "Optional. Whether to include full entity observations in results. Default: false. Set to true for complete entity context but reduces maximum results returned.",
+                description: "Include full entity observations (default: false).",
                 default: false
               },
               memory_zone: {
                 type: "string",
-                description: "Optional. Memory zone specifier to limit search scope. If provided, search will be restricted to entities within this zone. Omit to search in the default zone."
+                description: "Limit search to specific zone. Omit for default zone."
               }
             },
             required: ["query"],
@@ -408,7 +385,7 @@ async function startServer() {
         },
         {
           name: "list_zones",
-          description: "List all available memory zones",
+          description: "List all available memory zones with metadata.",
           inputSchema: {
             type: "object",
             properties: {}
@@ -416,17 +393,17 @@ async function startServer() {
         },
         {
           name: "create_zone",
-          description: "Create a new memory zone",
+          description: "Create a new memory zone with optional description.",
           inputSchema: {
             type: "object",
             properties: {
               name: {
                 type: "string",
-                description: "Name of the zone to create"
+                description: "Zone name (cannot be 'default')"
               },
               description: {
                 type: "string",
-                description: "Optional description of the zone"
+                description: "Optional zone description"
               }
             },
             required: ["name"]
@@ -434,17 +411,17 @@ async function startServer() {
         },
         {
           name: "delete_zone",
-          description: "Delete a memory zone and all its data",
+          description: "Delete a memory zone and all its entities/relations.",
           inputSchema: {
             type: "object",
             properties: {
               name: {
                 type: "string",
-                description: "Name of the zone to delete"
+                description: "Zone name to delete (cannot be 'default')"
               },
               confirm: {
                 type: "boolean",
-                description: "Confirmation flag, must be set to true to delete zone",
+                description: "Confirmation flag, must be true",
                 default: false
               }
             },
@@ -453,31 +430,31 @@ async function startServer() {
         },
         {
           name: "copy_entities",
-          description: "Copy entities from one zone to another",
+          description: "Copy entities between zones with optional relation handling.",
           inputSchema: {
             type: "object",
             properties: {
               names: {
                 type: "array",
                 items: { type: "string" },
-                description: "Array of entity names to copy"
+                description: "Entity names to copy"
               },
               source_zone: {
                 type: "string",
-                description: "Source zone to copy from"
+                description: "Source zone"
               },
               target_zone: {
                 type: "string",
-                description: "Target zone to copy to"
+                description: "Target zone"
               },
               copy_relations: {
                 type: "boolean",
-                description: "Whether to copy relations involving these entities (default: true)",
+                description: "Copy related relationships (default: true)",
                 default: true
               },
               overwrite: {
                 type: "boolean",
-                description: "Whether to overwrite entities if they already exist in target zone (default: false)",
+                description: "Overwrite if entity exists (default: false)",
                 default: false
               }
             },
@@ -486,31 +463,31 @@ async function startServer() {
         },
         {
           name: "move_entities",
-          description: "Move entities from one zone to another",
+          description: "Move entities between zones (copy + delete from source).",
           inputSchema: {
             type: "object",
             properties: {
               names: {
                 type: "array",
                 items: { type: "string" },
-                description: "Array of entity names to move"
+                description: "Entity names to move"
               },
               source_zone: {
                 type: "string",
-                description: "Source zone to move from"
+                description: "Source zone"
               },
               target_zone: {
                 type: "string",
-                description: "Target zone to move to"
+                description: "Target zone"
               },
               move_relations: {
                 type: "boolean",
-                description: "Whether to move relations involving these entities (default: true)",
+                description: "Move related relationships (default: true)",
                 default: true
               },
               overwrite: {
                 type: "boolean",
-                description: "Whether to overwrite entities if they already exist in target zone (default: false)",
+                description: "Overwrite if entity exists (default: false)",
                 default: false
               }
             },
@@ -519,14 +496,14 @@ async function startServer() {
         },
         {
           name: "merge_zones",
-          description: "Merge two or more zones into a target zone",
+          description: "Merge multiple zones with conflict resolution options.",
           inputSchema: {
             type: "object",
             properties: {
               source_zones: {
                 type: "array",
                 items: { type: "string" },
-                description: "Array of source zone names to merge from"
+                description: "Source zones to merge from"
               },
               target_zone: {
                 type: "string",
@@ -534,13 +511,13 @@ async function startServer() {
               },
               delete_source_zones: {
                 type: "boolean",
-                description: "Whether to delete source zones after merging (default: false)",
+                description: "Delete source zones after merging",
                 default: false
               },
               overwrite_conflicts: {
                 type: "string",
                 enum: ["skip", "overwrite", "rename"],
-                description: "How to handle entity name conflicts (default: 'skip')",
+                description: "How to handle name conflicts",
                 default: "skip"
               }
             },
@@ -549,13 +526,13 @@ async function startServer() {
         },
         {
           name: "zone_stats",
-          description: "Get statistics for a memory zone",
+          description: "Get statistics for entities and relationships in a zone.",
           inputSchema: {
             type: "object",
             properties: {
               zone: {
                 type: "string",
-                description: "Optional zone name to get statistics for, uses default zone if not specified"
+                description: "Zone name (omit for default zone)"
               }
             }
           }
