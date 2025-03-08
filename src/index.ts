@@ -12,6 +12,7 @@ import {
 } from "@modelcontextprotocol/sdk/types.js";
 import { KnowledgeGraphClient } from './kg-client.js';
 import { ESEntity, ESRelation, ESSearchParams } from './es-types.js';
+import GroqAI from './ai-service.js';
 
 // Environment configuration for Elasticsearch
 const ES_NODE = process.env.ES_NODE || 'http://localhost:9200';
@@ -193,9 +194,9 @@ async function startServer() {
                   type: "object",
                   properties: {
                     from: {type: "string", description: "Source entity name"},
-                    fromZone: {type: "string", description: "Optional zone for source entity, defaults to memory_zone or default zone"},
+                    fromZone: {type: "string", description: "Optional zone for source entity, defaults to memory_zone or default zone. Must be one of the existing zones."},
                     to: {type: "string", description: "Target entity name"},
-                    toZone: {type: "string", description: "Optional zone for target entity, defaults to memory_zone or default zone"},
+                    toZone: {type: "string", description: "Optional zone for target entity, defaults to memory_zone or default zone. Must be one of the existing zones."},
                     type: {type: "string", description: "Relationship type"}
                   },
                   required: ["from", "to", "type"]
@@ -277,9 +278,13 @@ async function startServer() {
               memory_zone: {
                 type: "string",
                 description: "Limit search to specific zone. Omit for default zone."
+              },
+              informationNeeds: {
+                type: "string",
+                description: "Description of what information the user is looking for. Results will be filtered using AI to return only the useful entities. Be clear and detailed."
               }
             },
-            required: ["query"],
+            required: ["query", "informationNeeds"],
             additionalProperties: false,
             "$schema": "http://json-schema.org/draft-07/schema#"
           }
@@ -788,14 +793,20 @@ async function startServer() {
       const includeObservations = params.includeObservations ?? false;
       const defaultLimit = includeObservations ? 5 : 20;
       const zone = params.memory_zone;
+      const informationNeeds = params.informationNeeds;
+      
+      // If informationNeeds is provided, increase the limit to get more results
+      // that will be filtered later by the AI
+      const searchLimit = informationNeeds ? (params.limit ? params.limit * 2 : defaultLimit * 2) : (params.limit || defaultLimit);
       
       const searchParams: ESSearchParams = {
         query: params.query,
         entityTypes: params.entityTypes,
-        limit: params.limit || defaultLimit,
+        limit: searchLimit, // Double the limit if we're going to filter with AI
         sortBy: params.sortBy,
         includeObservations,
-        zone
+        zone,
+        informationNeeds
       };
       
       const results = await kgClient.search(searchParams);
@@ -819,8 +830,35 @@ async function startServer() {
           return entity;
         });
       
+      // Apply AI filtering if informationNeeds is provided and GroqAI is enabled
+      let filteredEntities = entities;
+      if (informationNeeds && GroqAI.isEnabled && entities.length > 0) {
+        try {
+          // Get relevant entity names using AI filtering
+          const relevantEntityNames = await GroqAI.filterSearchResults(entities, informationNeeds);
+          
+          // Filter entities to only include those deemed relevant by the AI
+          filteredEntities = entities.filter(entity => 
+            relevantEntityNames.includes(entity.name)
+          );
+          
+          // If no entities were found relevant, fall back to the original results
+          if (filteredEntities.length === 0) {
+            filteredEntities = entities.slice(0, params.limit || defaultLimit);
+          }
+        } catch (error) {
+          console.error('Error applying AI filtering:', error);
+          // Fall back to the original results but limit to the requested amount
+          filteredEntities = entities.slice(0, params.limit || defaultLimit);
+        }
+      } else if (entities.length > (params.limit || defaultLimit)) {
+        // If we're not using AI filtering but retrieved more results due to the doubled limit,
+        // limit the results to the originally requested amount
+        filteredEntities = entities.slice(0, params.limit || defaultLimit);
+      }
+      
       // Get relations between these entities
-      const entityNames = entities.map(e => e.name);
+      const entityNames = filteredEntities.map(e => e.name);
       const { relations } = await kgClient.getRelationsForEntities(entityNames);
       
       // Map relations to the expected format
@@ -832,7 +870,7 @@ async function startServer() {
         toZone: r.toZone
       }));
       
-      return formatResponse({ entities, relations: formattedRelations });
+      return formatResponse({ entities: filteredEntities, relations: formattedRelations });
     }
     else if (toolName === "open_nodes") {
       const names = params.names || [];
