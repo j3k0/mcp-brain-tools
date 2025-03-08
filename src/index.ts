@@ -284,7 +284,7 @@ async function startServer() {
         },
         {
           name: "mark_important",
-          description: "Mark entity as important in knowledge graph (memory)",
+          description: "Mark entity as important in knowledge graph (memory) by boosting its relevance score",
           inputSchema: {
             type: "object",
             properties: {
@@ -294,7 +294,7 @@ async function startServer() {
               },
               important: {
                 type: "boolean",
-                description: "Set as important (true) or not (false)"
+                description: "Set as important (true - multiply relevance by 10) or not (false - divide relevance by 10)"
               }
             },
             required: ["name", "important"],
@@ -613,20 +613,30 @@ async function startServer() {
         throw new Error(`Entity "${name}" not found`);
       }
       
-      // Update importance flag
+      // Calculate the new relevance score
+      // If marking as important, multiply by 10
+      // If removing importance, divide by 10
+      const baseRelevanceScore = entity.relevanceScore || 1.0;
+      const newRelevanceScore = important 
+        ? Math.max(10, baseRelevanceScore * 10) // Minimum 10 when marking as important
+        : baseRelevanceScore / 10;
+      
+      // Update entity with new relevance score
+      // We still set isImportant for backward compatibility
       const updatedEntity = await kgClient.saveEntity({
         name: entity.name,
         entityType: entity.entityType,
         observations: entity.observations,
-        isImportant: important,
-        relevanceScore: entity.relevanceScore
+        isImportant: important, // Keep for backward compatibility
+        relevanceScore: newRelevanceScore
       });
       
       return formatResponse({
         entity: {
           name: updatedEntity.name,
           entityType: updatedEntity.entityType,
-          observations: updatedEntity.observations
+          observations: updatedEntity.observations,
+          relevanceScore: updatedEntity.relevanceScore
         }
       });
     }

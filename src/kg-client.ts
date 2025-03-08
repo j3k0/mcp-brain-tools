@@ -351,7 +351,7 @@ export class KnowledgeGraphClient {
       ];
     } else if (sortBy === 'importance') {
       queryObj.sort = [
-        { isImportant: { order: 'desc' } },
+        { relevanceScore: { order: 'desc' } },
         { readCount: { order: 'desc' } },
         '_score'
       ];

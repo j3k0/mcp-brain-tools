@@ -290,11 +290,11 @@ async function showEntity(name: string) {
     // Display entity information
     console.log(`Entity: ${entity.name}`);
     console.log(`Type: ${entity.entityType}`);
-    console.log(`Important: ${entity.isImportant ? 'Yes' : 'No'}`);
+    console.log(`Important: ${entity.isImportant ? 'Yes' : 'No'} (legacy field)`);
     console.log(`Last read: ${entity.lastRead}`);
     console.log(`Last write: ${entity.lastWrite}`);
     console.log(`Read count: ${entity.readCount}`);
-    console.log(`Relevance score: ${entity.relevanceScore?.toFixed(2) || '1.00'}`);
+    console.log(`Relevance score: ${entity.relevanceScore?.toFixed(2) || '1.00'} (higher = more important)`);
     console.log('');
     
     console.log('Observations:');
