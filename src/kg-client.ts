@@ -133,6 +133,11 @@ export class KnowledgeGraphClient {
     entity: Omit<ESEntity, 'type' | 'readCount' | 'lastRead' | 'lastWrite' | 'zone'>, 
     zone?: string
   ): Promise<ESEntity> {
+    // Validate entity name is not empty
+    if (!entity.name || entity.name.trim() === '') {
+      throw new Error('Entity name cannot be empty');
+    }
+    
     const actualZone = zone || this.defaultZone;
     await this.initialize(actualZone);
 
@@ -174,17 +179,36 @@ export class KnowledgeGraphClient {
 
     try {
       const indexName = this.getIndexForZone(actualZone);
+      const id = `entity:${name}`;
       
-      // Instead of direct get by ID which doesn't enforce zone isolation,
-      // use search with explicit zone filter to ensure we only get entities from this zone
+      // Try direct get by ID first
+      try {
+        const response = await this.client.get({
+          index: indexName,
+          id: id
+        });
+        
+        if (response && response._source) {
+          return response._source as ESEntity;
+        }
+      } catch (error) {
+        // If not found by ID, try search
+        if (error.statusCode === 404) {
+          // Fall through to search
+        } else {
+          throw error;
+        }
+      }
+      
+      // If direct get fails, use search with explicit zone filter
       const response = await this.client.search({
         index: indexName,
         body: {
           query: {
             bool: {
               must: [
-                // Use match query for name, which is not case-sensitive
-                { match: { name: name } },
+                // Use term query for exact name matching
+                { term: { name: name } },
                 { term: { type: 'entity' } },
                 { term: { zone: actualZone } }
               ]
@@ -274,10 +298,26 @@ export class KnowledgeGraphClient {
    * Delete an entity by name
    * @param name Entity name
    * @param zone Optional memory zone name, uses defaultZone if not specified
+   * @param options Optional configuration options
+   * @param options.cascadeRelations Whether to delete relations involving this entity (default: true)
    */
-  async deleteEntity(name: string, zone?: string): Promise<boolean> {
+  async deleteEntity(
+    name: string, 
+    zone?: string,
+    options?: {
+      cascadeRelations?: boolean;
+    }
+  ): Promise<boolean> {
+    // Validate entity name is not empty
+    if (!name || name.trim() === '') {
+      throw new Error('Entity name cannot be empty');
+    }
+    
     const actualZone = zone || this.defaultZone;
     await this.initialize(actualZone);
+    
+    // Default to true for cascading relation deletion
+    const cascadeRelations = options?.cascadeRelations !== false;
     
     try {
       // First, check if the entity exists
@@ -288,28 +328,72 @@ export class KnowledgeGraphClient {
       
       const indexName = this.getIndexForZone(actualZone);
       
-      // Delete any relations involving this entity
-      await this.client.deleteByQuery({
-        index: indexName,
-        body: {
-          query: {
-            bool: {
-              must: [
-                { term: { type: 'relation' } },
-                {
-                  bool: {
-                    should: [
-                      { term: { from: name } },
-                      { term: { to: name } }
-                    ]
+      // Delete relations involving this entity if cascading is enabled
+      if (cascadeRelations) {
+        console.log(`Cascading relations for entity ${name} in zone ${actualZone}`);
+        
+        // First, delete relations within the same zone
+        await this.client.deleteByQuery({
+          index: indexName,
+          body: {
+            query: {
+              bool: {
+                must: [
+                  { term: { type: 'relation' } },
+                  {
+                    bool: {
+                      should: [
+                        { term: { from: name } },
+                        { term: { to: name } }
+                      ]
+                    }
                   }
-                }
-              ]
+                ]
+              }
             }
-          }
-        },
-        refresh: true
-      });
+          },
+          refresh: true
+        });
+        
+        // Then, delete cross-zone relations where this entity is involved
+        // These are stored in the KG_RELATIONS_INDEX
+        await this.client.deleteByQuery({
+          index: KG_RELATIONS_INDEX,
+          body: {
+            query: {
+              bool: {
+                must: [
+                  {
+                    bool: {
+                      should: [
+                        {
+                          bool: {
+                            must: [
+                              { term: { from: name } },
+                              { term: { fromZone: actualZone } }
+                            ]
+                          }
+                        },
+                        {
+                          bool: {
+                            must: [
+                              { term: { to: name } },
+                              { term: { toZone: actualZone } }
+                            ]
+                          }
+                        }
+                      ]
+                    }
+                  }
+                ]
+              }
+            }
+          },
+          refresh: true
+        });
+      } else {
+        console.log(`Skipping relation cascade for entity ${name} in zone ${actualZone}`);
+      }
       
       // Delete the entity
       await this.client.delete({
@@ -332,36 +416,90 @@ export class KnowledgeGraphClient {
    * @param relation Relation to create or update
    * @param fromZone Optional zone for the source entity, uses defaultZone if not specified
    * @param toZone Optional zone for the target entity, uses defaultZone if not specified
+   * @param options Optional configuration options
+   * @param options.autoCreateMissingEntities Whether to automatically create missing entities (default: true)
    */
   async saveRelation(
     relation: Omit<ESRelation, 'type' | 'fromZone' | 'toZone'>,
     fromZone?: string,
-    toZone?: string
+    toZone?: string,
+    options?: {
+      autoCreateMissingEntities?: boolean;
+    }
   ): Promise<ESRelation> {
     await this.initialize();
+    
+    // Default to true for backwards compatibility
+    const autoCreateMissingEntities = options?.autoCreateMissingEntities ?? true;
     
     const actualFromZone = fromZone || this.defaultZone;
     const actualToZone = toZone || this.defaultZone;
     
-    // Check if both entities exist, if not, create them
+    // Check if both entities exist
     const fromEntity = await this.getEntityWithoutUpdatingLastRead(relation.from, actualFromZone);
-    if (!fromEntity) {
-      await this.saveEntity({ 
-        name: relation.from, 
-        entityType: 'unknown', 
-        observations: [],
-        relevanceScore: 1.0
-      }, actualFromZone);
-    }
-    
     const toEntity = await this.getEntityWithoutUpdatingLastRead(relation.to, actualToZone);
-    if (!toEntity) {
-      await this.saveEntity({ 
-        name: relation.to, 
-        entityType: 'unknown', 
-        observations: [],
-        relevanceScore: 1.0
-      }, actualToZone);
+    
+    // If either entity doesn't exist
+    if (!fromEntity || !toEntity) {
+      // If auto-creation is disabled, throw an error
+      if (!autoCreateMissingEntities) {
+        const missingEntities = [];
+        if (!fromEntity) {
+          missingEntities.push(`'${relation.from}' in zone '${actualFromZone}'`);
+        }
+        if (!toEntity) {
+          missingEntities.push(`'${relation.to}' in zone '${actualToZone}'`);
+        }
+        
+        throw new Error(`Cannot create relation: Missing entities ${missingEntities.join(' and ')}`);
+      }
+      
+      // Otherwise, auto-create the missing entities
+      if (!fromEntity) {
+        console.log(`Auto-creating missing entity: ${relation.from} in zone ${actualFromZone}`);
+        const newEntity = {
+          type: 'entity',
+          name: relation.from,
+          entityType: 'unknown',
+          observations: [],
+          readCount: 0,
+          lastRead: new Date().toISOString(),
+          lastWrite: new Date().toISOString(),
+          relevanceScore: 1.0,
+          zone: actualFromZone
+        };
+        
+        const fromIndexName = this.getIndexForZone(actualFromZone);
+        await this.client.index({
+          index: fromIndexName,
+          id: `entity:${relation.from}`,
+          document: newEntity,
+          refresh: true
+        });
+      }
+      
+      if (!toEntity) {
+        console.log(`Auto-creating missing entity: ${relation.to} in zone ${actualToZone}`);
+        const newEntity = {
+          type: 'entity',
+          name: relation.to,
+          entityType: 'unknown',
+          observations: [],
+          readCount: 0,
+          lastRead: new Date().toISOString(),
+          lastWrite: new Date().toISOString(),
+          relevanceScore: 1.0,
+          zone: actualToZone
+        };
+        
+        const toIndexName = this.getIndexForZone(actualToZone);
+        await this.client.index({
+          index: toIndexName,
+          id: `entity:${relation.to}`,
+          document: newEntity,
+          refresh: true
+        });
+      }
     }
     
     // Create the relation
@@ -493,24 +631,65 @@ export class KnowledgeGraphClient {
     // Build search query for non-wildcard searches
     const query: any = {
       bool: {
-        must: [
-          {
-            multi_match: {
-              query: params.query,
-              fields: ['name^3', 'entityType^2', 'observations', 'relationType^2']
-            }
-          }
-        ]
+        must: []
       }
     };
     
-    // Add entityType filter if specified
-    if (params.entityTypes && params.entityTypes.length > 0) {
+    // Process the query to handle boolean operators or fuzzy search notation
+    if (params.query.includes(' AND ') || 
+        params.query.includes(' OR ') || 
+        params.query.includes(' NOT ') ||
+        params.query.includes('~')) {
+      // Use Elasticsearch's query_string query for boolean operators and fuzzy search
       query.bool.must.push({
-        terms: {
-          entityType: params.entityTypes
+        query_string: {
+          query: params.query,
+          fields: ['name^3', 'entityType^2', 'observations', 'relationType^2'],
+          default_operator: 'AND',
+          // Enable fuzzy matching by default
+          fuzziness: 'AUTO',
+          // Allow fuzzy matching on all terms unless explicitly disabled
+          fuzzy_max_expansions: 50,
+          // Support phrase slop for proximity searches
+          phrase_slop: 2
         }
       });
+      
+      console.error(`Using query_string for advanced query: ${params.query}`);
+    } else {
+      // Use multi_match for simple queries without boolean operators
+      query.bool.must.push({
+        multi_match: {
+          query: params.query,
+          fields: ['name^3', 'entityType^2', 'observations', 'relationType^2'],
+          // Enable fuzzy matching by default
+          fuzziness: 'AUTO'
+        }
+      });
+      
+      console.error(`Using multi_match for simple query: ${params.query}`);
+    }
+    
+    // Add entityType filter if specified
+    if (params.entityTypes && params.entityTypes.length > 0) {
+      // Use a more flexible filter with "should" (equivalent to OR) to match any of the entity types
+      const entityTypeFilters = params.entityTypes.map(type => ({
+        match: {
+          entityType: {
+            query: type,
+            operator: "and"
+          }
+        }
+      }));
+      
+      query.bool.must.push({
+        bool: {
+          should: entityTypeFilters,
+          minimum_should_match: 1
+        }
+      });
+      
+      console.error(`Applied entity type filters: ${JSON.stringify(entityTypeFilters)}`);
     }
     
     // Log validation to ensure zone filter is being applied
@@ -1388,15 +1567,39 @@ export class KnowledgeGraphClient {
    * @param name Entity name
    * @param important Whether the entity is important
    * @param zone Optional memory zone name, uses defaultZone if not specified
+   * @param options Optional configuration options
+   * @param options.autoCreateMissingEntities Whether to automatically create missing entities (default: false)
    * @returns The updated entity
    */
-  async markImportant(name: string, important: boolean, zone?: string): Promise<ESEntity> {
+  async markImportant(
+    name: string, 
+    important: boolean, 
+    zone?: string,
+    options?: {
+      autoCreateMissingEntities?: boolean;
+    }
+  ): Promise<ESEntity> {
     const actualZone = zone || this.defaultZone;
     
+    // Default to false for auto-creation (different from saveRelation)
+    const autoCreateMissingEntities = options?.autoCreateMissingEntities ?? false;
+    
     // Get existing entity
-    const entity = await this.getEntity(name, actualZone);
+    let entity = await this.getEntity(name, actualZone);
+    
+    // If entity doesn't exist
     if (!entity) {
-      throw new Error(`Entity "${name}" not found in zone "${actualZone}"`);
+      if (autoCreateMissingEntities) {
+        // Auto-create the entity with unknown type
+        entity = await this.saveEntity({
+          name: name,
+          entityType: 'unknown',
+          observations: [],
+          relevanceScore: 1.0
+        }, actualZone);
+      } else {
+        throw new Error(`Entity "${name}" not found in zone "${actualZone}"`);
+      }
     }
     
     // Calculate the new relevance score
