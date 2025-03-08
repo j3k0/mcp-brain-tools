@@ -1,0 +1,7 @@
+---
+description: `git` in the terminal
+globs: 
+alwaysApply: false
+---
+- git commit must include a short detail and explanation, why, how, design choice, etc. (-m can be repeated for multiple paragraphs)
+- disable pager by piping commands like `git status` to `cat`.
