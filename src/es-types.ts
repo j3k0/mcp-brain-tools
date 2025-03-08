@@ -39,6 +39,7 @@ export const KG_INDEX_CONFIG = {
       lastWrite: { type: 'date' },
       readCount: { type: 'integer' },
       isImportant: { type: 'boolean' },
+      relevanceScore: { type: 'float' },
       
       // Relation fields
       from: { type: 'keyword' },
@@ -58,6 +59,7 @@ export interface ESEntity {
   lastWrite: string;
   readCount: number;
   isImportant: boolean;
+  relevanceScore: number;
 }
 
 // Relation document type

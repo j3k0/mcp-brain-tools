@@ -67,7 +67,9 @@ export class KnowledgeGraphClient {
       // If entity exists, preserve its readCount and lastRead, but update lastWrite
       readCount: existingEntity?.readCount ?? 0,
       lastRead: existingEntity?.lastRead ?? now,
-      lastWrite: now
+      lastWrite: now,
+      // Initialize relevanceScore to 1.0 for new entities, or preserve the existing score
+      relevanceScore: existingEntity?.relevanceScore ?? 1.0
     };
 
     await this.client.index({
@@ -105,6 +107,7 @@ export class KnowledgeGraphClient {
 
   /**
    * Get an entity by name
+   * This updates the lastRead timestamp, readCount, and doubles the relevanceScore
    * @param name Entity name
    */
   async getEntity(name: string): Promise<ESEntity | null> {
@@ -120,12 +123,17 @@ export class KnowledgeGraphClient {
       const entity = result._source;
       if (entity) {
         const now = new Date().toISOString();
+        
+        // Double the relevance score (minimum 1.0)
+        const newRelevanceScore = Math.max(1.0, (entity.relevanceScore || 1.0) * 2);
+        
         await this.client.update({
           index: KG_INDEX,
           id: `entity:${name}`,
           doc: {
             lastRead: now,
-            readCount: (entity.readCount || 0) + 1
+            readCount: (entity.readCount || 0) + 1,
+            relevanceScore: newRelevanceScore
           }
         });
         
@@ -133,7 +141,8 @@ export class KnowledgeGraphClient {
         return {
           ...entity,
           lastRead: now,
-          readCount: (entity.readCount || 0) + 1
+          readCount: (entity.readCount || 0) + 1,
+          relevanceScore: newRelevanceScore
         };
       }
       
@@ -247,6 +256,10 @@ export class KnowledgeGraphClient {
 
   /**
    * Search for entities using the query language
+   * Results are scored based on:
+   * 1. Relevance to search query
+   * 2. Entity relevanceScore (increases when entity is accessed)
+   * 3. Time decay (10% per month since last access)
    * @param params Search parameters
    */
   async search(params: ESSearchParams): Promise<ESHighlightResponse<ESEntity | ESRelation>> {
@@ -289,7 +302,32 @@ export class KnowledgeGraphClient {
     // Using any type to bypass TypeScript checks for now
     const queryObj: any = {
       index: KG_INDEX,
-      query: { bool: esQuery.bool },
+      query: {
+        function_score: {
+          query: { bool: esQuery.bool },
+          functions: [
+            // Score based on relevanceScore field
+            {
+              field_value_factor: {
+                field: "relevanceScore",
+                factor: 1.0,
+                missing: 1.0
+              }
+            },
+            // Exponential decay based on lastRead (10% per month)
+            {
+              exp: {
+                lastRead: {
+                  scale: "30d",   // 30 days
+                  decay: 0.1,     // 10% decay per scale
+                  offset: "1d"    // Don't start decaying until after 1 day
+                }
+              }
+            }
+          ],
+          boost_mode: "multiply"  // Multiply all function scores together
+        }
+      },
       highlight: {
         fields: {
           name: {},
@@ -304,7 +342,7 @@ export class KnowledgeGraphClient {
       _source: true
     };
     
-    // Add scoring based on sortBy
+    // Add custom sorting if specified
     if (sortBy === 'recent') {
       queryObj.sort = [
         { lastWrite: { order: 'desc' } }, // Sort by lastWrite first (most recently modified)

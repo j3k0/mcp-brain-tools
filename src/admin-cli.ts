@@ -294,6 +294,7 @@ async function showEntity(name: string) {
     console.log(`Last read: ${entity.lastRead}`);
     console.log(`Last write: ${entity.lastWrite}`);
     console.log(`Read count: ${entity.readCount}`);
+    console.log(`Relevance score: ${entity.relevanceScore?.toFixed(2) || '1.00'}`);
     console.log('');
     
     console.log('Observations:');
