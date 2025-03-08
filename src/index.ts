@@ -247,36 +247,59 @@ async function startServer() {
         },
         {
           name: "search_nodes",
-          description: "Search for entities in knowledge graph (memory) using Elasticsearch query capabilities. Returns matching entities and their relations. Supports advanced Elasticsearch query syntax including: Boolean operators (AND, OR, NOT), fuzzy matching (~N), proximity searches (\"phrase\"~N), and boosting (^N). Examples: 'JC AND Hoelt' for Boolean AND; 'Thea OR Souad' for Boolean OR; 'Hoelt NOT JC' for Boolean NOT; 'Helt~1' for fuzzy matching on both entity names and observation content; '\"technical issues\"~2' for proximity searches; 'JC^3 Hoelt' for boosting specific terms.",
+          description: "Search for entities in the knowledge graph (memory) using powerful query capabilities. Returns matching entities and their relations.\n\n" +
+          "SEARCH QUERY SYNTAX:\n" +
+          "1. Simple Queries: Single words or phrases match across entity names, types, and observations.\n" +
+          "   Example: 'meeting' finds entities containing this word in any field.\n\n" +
+          "2. Boolean Operators:\n" +
+          "   - AND: Requires both terms to be present.\n" +
+          "     Example: 'marketing AND budget' finds entities containing both words.\n" +
+          "   - OR: Matches if either term is present.\n" +
+          "     Example: 'John OR Jane' finds entities containing either name.\n" +
+          "   - NOT: Excludes entities containing the term.\n" +
+          "     Example: 'meeting NOT canceled' finds meetings that weren't canceled.\n" +
+          "   - Parentheses for grouping: '(marketing OR sales) AND budget'\n\n" +
+          "3. Fuzzy Matching: Append ~ to a term to find similar spellings.\n" +
+          "   Example: 'Jonson~' matches 'Johnson', 'Jonsen', etc.\n" +
+          "   Example: 'Smth~2' matches terms with up to 2 character changes.\n\n" +
+          "4. Phrase Searches: Use quotes for exact phrases, add ~ for proximity.\n" +
+          "   Example: '\"project plan\"' finds the exact phrase.\n" +
+          "   Example: '\"project plan\"~3' finds words within 3 positions of each other.\n\n" +
+          "5. Field Boosting: Prioritize matches in certain fields using ^.\n" +
+          "   Example: 'meeting^3 agenda' gives 'meeting' 3x more importance.\n\n" +
+          "6. Wildcards: Use * for multiple characters, ? for single character.\n" +
+          "   Example: 'meet*' matches 'meeting', 'meets', etc.\n" +
+          "   Example: 'Jo?n' matches 'John', 'Joan', etc.\n\n" +
+          "All searches automatically apply zone isolation and respect entityType filters if provided.",
           inputSchema: {
             type: "object",
             properties: {
               query: {
                 type: "string",
-                description: "Elasticsearch query (supports boolean operators, wildcards, fuzzy matching with tilde notation on all fields including observations)"
+                description: "Search query string using the syntax described above. Use '*' to match all entities."
               },
               entityTypes: {
                 type: "array",
                 items: {type: "string"},
-                description: "Filter by entity types"
+                description: "Optional. Filter results to include only entities of specific types. Multiple types create an OR condition (entities matching ANY of the specified types will be included)."
               },
               limit: {
                 type: "integer",
-                description: "Max results (default: 20 if includeObservations is false, 5 if true)"
+                description: "Optional. Maximum number of results to return. Default: 20 if includeObservations is false, 5 if true. Higher values may impact performance."
               },
               sortBy: {
                 type: "string",
                 enum: ["relevance", "recency", "importance"],
-                description: "Sort by relevance, recency, or importance"
+                description: "Optional. Sort order for results: 'relevance' (default) sorts by match quality, 'recency' by last access time, 'importance' by marked importance and relevance score."
               },
               includeObservations: {
                 type: "boolean",
-                description: "Whether to include full entity observations in results (default: false)",
+                description: "Optional. Whether to include full entity observations in results. Default: false. Set to true for complete entity context but reduces maximum results returned.",
                 default: false
               },
               memory_zone: {
                 type: "string",
-                description: "Optional memory zone specifier. If provided, search will be limited to this zone."
+                description: "Optional. Memory zone specifier to limit search scope. If provided, search will be restricted to entities within this zone. Omit to search in the default zone."
               }
             },
             required: ["query"],
