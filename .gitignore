@@ -11,3 +11,4 @@ test-data*.jsonl
 relation.jsonl
 backup.json
 multi-zone-backup.json
+launch
