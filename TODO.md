@@ -140,21 +140,21 @@ We're migrating our knowledge graph "memory" from a single JSON file to Elastics
   - add_observations
   
 ### Remaining Tasks
-- [ ] **Create comprehensive test suite for zone functionality**:
+- [x] **Create comprehensive test suite for zone functionality**:
   - Test zone isolation for entity creation and retrieval
   - Test zone-specific search operations
   - Test cross-zone relations
   - Test zone filtering in get_recent operations
 
-- [ ] **Review and update all client-facing API endpoints**:
+- [x] **Review and update all client-facing API endpoints**:
   - Need to ensure all remaining MCP tools properly handle the zone parameter
   - Add validation to ensure zone parameters are properly used
   - Add warning logs when operations might cross zone boundaries
 
 ### Validation Plan
-- [ ] Create test script to verify zone isolation
-- [ ] Add test cases for all reported issues
-- [ ] Implement automated tests for zone boundary enforcement
+- [x] Create test script to verify zone isolation
+- [x] Add test cases for all reported issues
+- [x] Implement automated tests for zone boundary enforcement
 - [ ] Document zone behavior clearly
 
 ## Future Enhancements
@@ -162,4 +162,22 @@ We're migrating our knowledge graph "memory" from a single JSON file to Elastics
 - Enhanced visualization capabilities
 - Multi-tenant support
 - Advanced security features
-- Auto-clustering of related entities 
+- Auto-clustering of related entities
+
+## Completed Zone Functionality Improvements
+- Added comprehensive test suite for zone functionality in `test-zone-isolation.js`
+- Fixed search issues with custom zones by improving the search method in KnowledgeGraphClient
+- Added special handling for wildcard queries and exact entity name searches
+- Updated all client-facing API tools to support the memory_zone parameter:
+  - create_entities
+  - update_entities
+  - delete_entities
+  - create_relations
+  - delete_relations
+  - search_nodes
+  - open_nodes
+  - add_observations
+  - get_recent
+- Implemented proper zone isolation for all operations
+- Added validation to ensure zone parameters are properly used
+- Fixed issues with cross-zone relations 
