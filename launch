@@ -1,6 +1,0 @@
-#!/bin/bash
-set -e
-cd "$(dirname "$0")"
-test -e node_modules || npm install
-npm run build
-node dist/index.js "$@"
