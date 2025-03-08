@@ -394,7 +394,6 @@ async function showEntity(name: string, zone?: string) {
     console.log(`Entity: ${entity.name}`);
     console.log(`Type: ${entity.entityType}`);
     console.log(`Zone: ${entity.zone || 'default'}`);
-    console.log(`Important: ${entity.isImportant ? 'Yes' : 'No'} (legacy field)`);
     console.log(`Last read: ${entity.lastRead}`);
     console.log(`Last write: ${entity.lastWrite}`);
     console.log(`Read count: ${entity.readCount}`);

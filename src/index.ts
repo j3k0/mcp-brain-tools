@@ -105,7 +105,7 @@ async function startServer() {
                       items: {type: "string"},
                       description: "Observations about this entity"
                     },
-                    isImportant: {type: "boolean", description: "Is entity important"}
+                    relevanceScore: {type: "number", description: "Relevance score (higher = more important)"}
                   },
                   required: ["name", "entityType"]
                 },
@@ -188,7 +188,9 @@ async function startServer() {
                   type: "object",
                   properties: {
                     from: {type: "string", description: "Source entity name"},
+                    fromZone: {type: "string", description: "Optional zone for source entity, defaults to memory_zone or default zone"},
                     to: {type: "string", description: "Target entity name"},
+                    toZone: {type: "string", description: "Optional zone for target entity, defaults to memory_zone or default zone"},
                     type: {type: "string", description: "Relationship type"}
                   },
                   required: ["from", "to", "type"]
@@ -196,7 +198,7 @@ async function startServer() {
               },
               memory_zone: {
                 type: "string",
-                description: "Optional memory zone specifier. Relationships may span across zones, with entities from different zones."
+                description: "Optional default memory zone specifier. Used if a relation doesn't specify fromZone or toZone."
               }
             },
             required: ["relations"],
@@ -426,7 +428,6 @@ async function startServer() {
           name: entity.name,
           entityType: entity.entityType,
           observations: entity.observations,
-          isImportant: entity.isImportant,
           relevanceScore: entity.relevanceScore
         }, zone);
         
@@ -460,7 +461,6 @@ async function startServer() {
           name: entity.name,
           entityType: entity.entityType || existingEntity.entityType,
           observations: entity.observations || existingEntity.observations,
-          isImportant: entity.isImportant !== undefined ? entity.isImportant : existingEntity.isImportant,
           relevanceScore: entity.relevanceScore || existingEntity.relevanceScore
         }, zone);
         
@@ -493,15 +493,18 @@ async function startServer() {
     }
     else if (toolName === "create_relations") {
       const relations = params.relations;
-      const zone = params.memory_zone;
+      const defaultZone = params.memory_zone;
       const savedRelations = [];
       
       for (const relation of relations) {
+        const fromZone = relation.fromZone || defaultZone;
+        const toZone = relation.toZone || defaultZone;
+        
         const savedRelation = await kgClient.saveRelation({
           from: relation.from,
           to: relation.to,
           relationType: relation.type
-        }, zone, zone);
+        }, fromZone, toZone);
         
         savedRelations.push(savedRelation);
       }
@@ -631,130 +634,62 @@ async function startServer() {
       const entity = await kgClient.getEntity(name, zone);
       if (!entity) {
         const zoneMsg = zone ? ` in zone "${zone}"` : "";
-        throw new Error(`Entity "${name}" not found${zoneMsg}`);
+        return formatResponse({
+          success: false,
+          error: `Entity "${name}" not found${zoneMsg}`,
+          message: "Please create the entity before adding observations."
+        });
       }
       
-      // Add new observations to the existing ones
-      const updatedObservations = [
-        ...entity.observations,
-        ...observations
-      ];
-      
-      // Update the entity
-      const updatedEntity = await kgClient.saveEntity({
-        name: entity.name,
-        entityType: entity.entityType,
-        observations: updatedObservations,
-        isImportant: entity.isImportant,
-        relevanceScore: entity.relevanceScore
-      }, zone);
+      // Add observations to the entity
+      const updatedEntity = await kgClient.addObservations(name, observations, zone);
       
       return formatResponse({
-        entity: {
-          name: updatedEntity.name,
-          entityType: updatedEntity.entityType,
-          observations: updatedEntity.observations
-        }
+        success: true,
+        entity: updatedEntity
       });
     }
     else if (toolName === "mark_important") {
       const name = params.name;
       const important = params.important;
+      const zone = params.memory_zone;
       
       // Get existing entity
-      const entity = await kgClient.getEntity(name);
+      const entity = await kgClient.getEntity(name, zone);
       if (!entity) {
-        throw new Error(`Entity "${name}" not found`);
+        const zoneMsg = zone ? ` in zone "${zone}"` : "";
+        return formatResponse({
+          success: false,
+          error: `Entity "${name}" not found${zoneMsg}`,
+          message: "Please create the entity before marking it as important."
+        });
       }
       
-      // Calculate the new relevance score
-      // If marking as important, multiply by 10
-      // If removing importance, divide by 10
-      const baseRelevanceScore = entity.relevanceScore || 1.0;
-      const newRelevanceScore = important 
-        ? Math.max(10, baseRelevanceScore * 10) // Minimum 10 when marking as important
-        : baseRelevanceScore / 10;
-      
-      // Update entity with new relevance score
-      // We still set isImportant for backward compatibility
-      const updatedEntity = await kgClient.saveEntity({
-        name: entity.name,
-        entityType: entity.entityType,
-        observations: entity.observations,
-        isImportant: important, // Keep for backward compatibility
-        relevanceScore: newRelevanceScore
-      });
+      // Mark the entity as important
+      const updatedEntity = await kgClient.markImportant(name, important, zone);
       
       return formatResponse({
-        entity: {
-          name: updatedEntity.name,
-          entityType: updatedEntity.entityType,
-          observations: updatedEntity.observations,
-          relevanceScore: updatedEntity.relevanceScore
-        }
+        success: true,
+        entity: updatedEntity
       });
     }
     else if (toolName === "get_recent") {
+      const limit = params.limit || 20;
       const includeObservations = params.includeObservations ?? false;
-      const defaultLimit = includeObservations ? 5 : 20;
-      const limit = params.limit || defaultLimit;
       const zone = params.memory_zone;
       
-      // Search with empty query but sort by recency
-      const searchParams: ESSearchParams & { zone?: string } = {
-        query: "*", // Use wildcard instead of empty query to match all documents
-        limit: limit,
-        sortBy: 'recent', // Sort by recency
-        includeObservations,
-        zone // Pass through the zone parameter
-      };
+      const recentEntities = await kgClient.getRecentEntities(limit, includeObservations, zone);
       
-      const results = await kgClient.search(searchParams);
-      
-      // Transform the results to the expected format, removing unnecessary fields
-      const entities = results.hits.hits
-        .filter((hit: any) => hit._source.type === 'entity')
-        .map((hit: any) => {
-          const entity: any = {
-            name: hit._source.name,
-            entityType: hit._source.entityType,
-          };
-          
-          // Only include observations and timestamps if requested
-          if (includeObservations) {
-            entity.observations = (hit._source as ESEntity).observations;
-            entity.lastWrite = (hit._source as ESEntity).lastWrite;
-            entity.lastRead = (hit._source as ESEntity).lastRead;
-          }
-          
-          return entity;
-        });
-      
-      // Get relations between these entities
-      const entityNames = entities.map(e => e.name);
-      const { relations } = await kgClient.getRelationsForEntities(entityNames);
-      
-      // Map relations to the expected format
-      const formattedRelations = relations.map(r => ({
-        from: r.from,
-        to: r.to,
-        type: r.relationType
-      }));
-      
-      return formatResponse({ entities, relations: formattedRelations });
+      return formatResponse({
+        entities: recentEntities.map(e => ({
+          name: e.name,
+          entityType: e.entityType,
+          observations: e.observations
+        })),
+        total: recentEntities.length
+      });
     }
-    
-    throw new Error(`Unknown tool: ${toolName}`);
   });
-
-  // Start the server
-  const transport = new StdioServerTransport();
-  await server.connect(transport);
-  console.error('MCP server running on stdio');
 }
 
-// Startup error handling
-startServer().catch(error => {
-  console.error('Error starting server:', error);
-  process.exit(1);
-}); 
+startServer();

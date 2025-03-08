@@ -128,7 +128,7 @@ async function testEntityCreationInZones(client) {
       name: ENTITY_A,
       entityType: 'test',
       observations: ['This is a test entity in zone A'],
-      isImportant: false
+      relevanceScore: 1
     }, ZONE_A);
     console.log(`  - Created entity ${ENTITY_A} in zone ${ZONE_A}`);
     console.log(`  - Saved entity details: ${JSON.stringify(savedEntityA)}`);
@@ -139,7 +139,7 @@ async function testEntityCreationInZones(client) {
       name: ENTITY_B,
       entityType: 'test',
       observations: ['This is a test entity in zone B'],
-      isImportant: false
+      relevanceScore: 1
     }, ZONE_B);
     console.log(`  - Created entity ${ENTITY_B} in zone ${ZONE_B}`);
     console.log(`  - Saved entity details: ${JSON.stringify(savedEntityB)}`);
@@ -150,7 +150,7 @@ async function testEntityCreationInZones(client) {
       name: ENTITY_DEFAULT,
       entityType: 'test',
       observations: ['This is a test entity in the default zone'],
-      isImportant: false
+      relevanceScore: 1
     });
     console.log(`  - Created entity ${ENTITY_DEFAULT} in default zone`);
     console.log(`  - Saved entity details: ${JSON.stringify(savedEntityDefault)}`);

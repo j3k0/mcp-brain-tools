@@ -144,14 +144,11 @@ export class KnowledgeGraphClient {
       name: entity.name,
       entityType: entity.entityType,
       observations: entity.observations || [],
-      isImportant: entity.isImportant ?? false,
       // If entity exists, preserve its readCount and lastRead, but update lastWrite
       readCount: existingEntity?.readCount ?? 0,
       lastRead: existingEntity?.lastRead ?? now,
       lastWrite: now,
-      // Initialize relevanceScore to 1.0 for new entities, or preserve the existing score
-      relevanceScore: existingEntity?.relevanceScore ?? 1.0,
-      // Add zone information
+      relevanceScore: entity.relevanceScore ?? (existingEntity?.relevanceScore ?? 1.0),
       zone: actualZone
     };
 
@@ -353,7 +350,6 @@ export class KnowledgeGraphClient {
         name: relation.from, 
         entityType: 'unknown', 
         observations: [],
-        isImportant: false,
         relevanceScore: 1.0
       }, actualFromZone);
     }
@@ -364,7 +360,6 @@ export class KnowledgeGraphClient {
         name: relation.to, 
         entityType: 'unknown', 
         observations: [],
-        isImportant: false,
         relevanceScore: 1.0
       }, actualToZone);
     }
@@ -1382,7 +1377,6 @@ export class KnowledgeGraphClient {
       name: entity.name,
       entityType: entity.entityType,
       observations: updatedObservations,
-      isImportant: entity.isImportant,
       relevanceScore: entity.relevanceScore
     }, actualZone);
     
@@ -1414,12 +1408,10 @@ export class KnowledgeGraphClient {
       : baseRelevanceScore / 10;
     
     // Update entity with new relevance score
-    // We still set isImportant for backward compatibility
     const updatedEntity = await this.saveEntity({
       name: entity.name,
       entityType: entity.entityType,
       observations: entity.observations,
-      isImportant: important, // Keep for backward compatibility
       relevanceScore: newRelevanceScore
     }, actualZone);
     

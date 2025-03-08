@@ -50,7 +50,6 @@ export const KG_INDEX_CONFIG = {
       lastRead: { type: 'date' },
       lastWrite: { type: 'date' },
       readCount: { type: 'integer' },
-      isImportant: { type: 'boolean' },
       relevanceScore: { type: 'float' },
       
       // Relation fields
@@ -70,7 +69,6 @@ export interface ESEntity {
   lastRead: string;
   lastWrite: string;
   readCount: number;
-  isImportant: boolean;
   relevanceScore: number;
   zone?: string; // The memory zone this entity belongs to
 }

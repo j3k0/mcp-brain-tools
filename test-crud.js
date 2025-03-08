@@ -19,7 +19,7 @@ async function runTests() {
       name: TEST_ENTITY_NAME,
       entityType: 'TestEntityType',
       observations: ['This is a test entity', 'Created for CRUD testing'],
-      isImportant: true
+      relevanceScore: 10
     });
     console.log('Entity created:', entity);
     
@@ -29,7 +29,7 @@ async function runTests() {
       name: TEST_RELATION_TARGET,
       entityType: 'TestEntityType',
       observations: ['This is a target entity for relations'],
-      isImportant: false
+      relevanceScore: 1
     });
     console.log('Target entity created:', targetEntity);
     
@@ -48,7 +48,7 @@ async function runTests() {
       name: TEST_ENTITY_NAME,
       entityType: 'UpdatedTestEntityType',
       observations: ['This is a test entity', 'Created for CRUD testing', 'Updated with new observation'],
-      isImportant: false
+      relevanceScore: 10
     });
     console.log('Entity updated:', updatedEntity);
     

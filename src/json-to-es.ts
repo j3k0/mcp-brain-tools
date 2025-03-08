@@ -46,8 +46,7 @@ async function importFromJsonFile(
             lastRead: item.lastRead || now,
             lastWrite: item.lastWrite || now,
             readCount: typeof item.readCount === 'number' ? item.readCount : 0,
-            isImportant: !!item.isImportant,
-            relevanceScore: typeof item.relevanceScore === 'number' ? item.relevanceScore : 1.0,
+            relevanceScore: typeof item.relevanceScore === 'number' ? item.relevanceScore : (item.isImportant ? 10 : 1.0),
             zone: item.zone || esOptions.defaultZone || 'default'
           };
           items.push(entity);
