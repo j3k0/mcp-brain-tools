@@ -83,7 +83,7 @@ export class KnowledgeGraphClient {
             }
           }
         });
-        console.log(`Created metadata index: ${KG_METADATA_INDEX}`);
+        console.error(`Created metadata index: ${KG_METADATA_INDEX}`);
         
         // Add default zone metadata
         await this.saveZoneMetadata('default', 'Default knowledge zone');
@@ -99,7 +99,7 @@ export class KnowledgeGraphClient {
           index: KG_RELATIONS_INDEX,
           ...KG_INDEX_CONFIG
         });
-        console.log(`Created relations index: ${KG_RELATIONS_INDEX}`);
+        console.error(`Created relations index: ${KG_RELATIONS_INDEX}`);
       }
     }
     
@@ -118,7 +118,7 @@ export class KnowledgeGraphClient {
         index: indexName,
         ...KG_INDEX_CONFIG
       });
-      console.log(`Created index: ${indexName}`);
+      console.error(`Created index: ${indexName}`);
     }
     
     this.initializedIndices.add(indexName);
@@ -436,7 +436,7 @@ export class KnowledgeGraphClient {
     
     // Special handling for wildcard query
     if (params.query === '*') {
-      console.log(`Performing wildcard search in zone: ${actualZone}, index: ${indexName}`);
+      console.error(`Performing wildcard search in zone: ${actualZone}, index: ${indexName}`);
       
       try {
         // Use match_all query for wildcard
@@ -452,7 +452,7 @@ export class KnowledgeGraphClient {
           }
         });
         
-        console.log(`Wildcard search results: ${JSON.stringify(response.hits)}`);
+        console.error(`Wildcard search results: ${JSON.stringify(response.hits)}`);
         
         return response as unknown as ESHighlightResponse<ESEntity | ESRelation>;
       } catch (error) {
@@ -463,7 +463,7 @@ export class KnowledgeGraphClient {
     
     // Special handling for exact entity name search
     if (params.query && !params.query.includes(' ')) {
-      console.log(`Performing exact entity name search for "${params.query}" in zone: ${actualZone}, index: ${indexName}`);
+      console.error(`Performing exact entity name search for "${params.query}" in zone: ${actualZone}, index: ${indexName}`);
       
       try {
         // Use match query for exact entity name
@@ -481,7 +481,7 @@ export class KnowledgeGraphClient {
           }
         });
         
-        console.log(`Exact entity name search results: ${JSON.stringify(response.hits)}`);
+        console.error(`Exact entity name search results: ${JSON.stringify(response.hits)}`);
         
         return response as unknown as ESHighlightResponse<ESEntity | ESRelation>;
       } catch (error) {
@@ -514,7 +514,7 @@ export class KnowledgeGraphClient {
     }
     
     // Log validation to ensure zone filter is being applied
-    console.log(`Searching in zone: ${actualZone}, index: ${indexName}, query: ${JSON.stringify(query)}`);
+    console.error(`Searching in zone: ${actualZone}, index: ${indexName}, query: ${JSON.stringify(query)}`);
     
     // Set up sort order
     let sort: any[] = [];
@@ -549,7 +549,7 @@ export class KnowledgeGraphClient {
         }
       });
       
-      console.log(`Search results: ${JSON.stringify(response.hits)}`);
+      console.error(`Search results: ${JSON.stringify(response.hits)}`);
       
       return response as unknown as ESHighlightResponse<ESEntity | ESRelation>;
     } catch (error) {
