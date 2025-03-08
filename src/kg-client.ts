@@ -186,7 +186,8 @@ export class KnowledgeGraphClient {
           query: {
             bool: {
               must: [
-                { term: { name: name } },
+                // Use match query for name, which is not case-sensitive
+                { match: { name: name } },
                 { term: { type: 'entity' } },
                 { term: { zone: actualZone } }
               ]
@@ -1352,5 +1353,107 @@ export class KnowledgeGraphClient {
       entitiesAdded,
       relationsAdded
     };
+  }
+
+  /**
+   * Add observations to an existing entity
+   * @param name Entity name
+   * @param observations Array of observation strings to add
+   * @param zone Optional memory zone name, uses defaultZone if not specified
+   * @returns The updated entity
+   */
+  async addObservations(name: string, observations: string[], zone?: string): Promise<ESEntity> {
+    const actualZone = zone || this.defaultZone;
+    
+    // Get existing entity
+    const entity = await this.getEntity(name, actualZone);
+    if (!entity) {
+      throw new Error(`Entity "${name}" not found in zone "${actualZone}"`);
+    }
+    
+    // Add new observations to the existing ones
+    const updatedObservations = [
+      ...entity.observations,
+      ...observations
+    ];
+    
+    // Update the entity
+    const updatedEntity = await this.saveEntity({
+      name: entity.name,
+      entityType: entity.entityType,
+      observations: updatedObservations,
+      isImportant: entity.isImportant,
+      relevanceScore: entity.relevanceScore
+    }, actualZone);
+    
+    return updatedEntity;
+  }
+
+  /**
+   * Mark an entity as important or not important
+   * @param name Entity name
+   * @param important Whether the entity is important
+   * @param zone Optional memory zone name, uses defaultZone if not specified
+   * @returns The updated entity
+   */
+  async markImportant(name: string, important: boolean, zone?: string): Promise<ESEntity> {
+    const actualZone = zone || this.defaultZone;
+    
+    // Get existing entity
+    const entity = await this.getEntity(name, actualZone);
+    if (!entity) {
+      throw new Error(`Entity "${name}" not found in zone "${actualZone}"`);
+    }
+    
+    // Calculate the new relevance score
+    // If marking as important, multiply by 10
+    // If removing importance, divide by 10
+    const baseRelevanceScore = entity.relevanceScore || 1.0;
+    const newRelevanceScore = important 
+      ? Math.max(10, baseRelevanceScore * 10) // Minimum 10 when marking as important
+      : baseRelevanceScore / 10;
+    
+    // Update entity with new relevance score
+    // We still set isImportant for backward compatibility
+    const updatedEntity = await this.saveEntity({
+      name: entity.name,
+      entityType: entity.entityType,
+      observations: entity.observations,
+      isImportant: important, // Keep for backward compatibility
+      relevanceScore: newRelevanceScore
+    }, actualZone);
+    
+    return updatedEntity;
+  }
+
+  /**
+   * Get recent entities
+   * @param limit Maximum number of entities to return
+   * @param includeObservations Whether to include observations
+   * @param zone Optional memory zone name, uses defaultZone if not specified
+   * @returns Array of recent entities
+   */
+  async getRecentEntities(limit: number, includeObservations: boolean, zone?: string): Promise<ESEntity[]> {
+    const actualZone = zone || this.defaultZone;
+    
+    // Search with empty query but sort by recency
+    const searchParams: ESSearchParams = {
+      query: "*", // Use wildcard instead of empty query to match all documents
+      limit: limit,
+      sortBy: 'recent', // Sort by recency
+      includeObservations
+    };
+    
+    // Add zone if specified
+    if (actualZone) {
+      (searchParams as any).zone = actualZone;
+    }
+    
+    const results = await this.search(searchParams);
+    
+    // Filter to only include entities
+    return results.hits.hits
+      .filter((hit: any) => hit._source.type === 'entity')
+      .map((hit: any) => hit._source);
   }
 } 
