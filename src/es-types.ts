@@ -2,8 +2,20 @@
  * Elasticsearch types for knowledge graph
  */
 
-// Main index name
-export const KG_INDEX = 'knowledge-graph';
+// Read index prefix from environment variable or use default
+export const KG_INDEX_PREFIX = process.env.KG_INDEX_PREFIX || 'knowledge-graph';
+// Relations index name
+export const KG_RELATIONS_INDEX = `${KG_INDEX_PREFIX}-relations`;
+// Metadata index for zones
+export const KG_METADATA_INDEX = `${KG_INDEX_PREFIX}-metadata`;
+
+// Function to construct index name with zone
+export function getIndexName(zone: string = 'default'): string {
+  return `${KG_INDEX_PREFIX}@${zone.toLowerCase()}`;
+}
+
+// For backward compatibility
+export const KG_INDEX = getIndexName();
 
 // Index settings and mappings
 export const KG_INDEX_CONFIG = {
@@ -60,13 +72,16 @@ export interface ESEntity {
   readCount: number;
   isImportant: boolean;
   relevanceScore: number;
+  zone?: string; // The memory zone this entity belongs to
 }
 
 // Relation document type
 export interface ESRelation {
   type: 'relation';
-  from: string;
-  to: string;
+  from: string;       // Entity name (without zone suffix)
+  fromZone: string;   // Source entity zone
+  to: string;         // Entity name (without zone suffix)
+  toZone: string;     // Target entity zone
   relationType: string;
 }
 

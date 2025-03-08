@@ -12,6 +12,8 @@ A scalable knowledge graph implementation for Model Context Protocol (MCP) using
 - **Admin Tools**: Management CLI for inspecting and maintaining the knowledge graph
 - **Complete CRUD Operations**: Full create, read, update, and delete capabilities for entities and relations
 - **Elasticsearch Query Support**: Native support for Elasticsearch query DSL for advanced search capabilities
+- **Multi-Zone Architecture**: Separate memory zones for organizing domain-specific knowledge
+- **Cross-Zone Relations**: Relations between entities in different memory zones
 
 ## Architecture
 
@@ -22,6 +24,7 @@ The knowledge graph system consists of:
 3. **MCP Server**: Protocol-compliant server for AI models to interact with the knowledge graph
 4. **Admin CLI**: Command-line tools for maintenance and management
 5. **Import/Export Tools**: Utilities for data migration and backup
+6. **Multiple Memory Zones**: Ability to partition knowledge into separate zones/indices
 
 ## Getting Started
 
@@ -78,6 +81,8 @@ The system can be configured via environment variables:
 - `ES_USERNAME`: Elasticsearch username (if authentication is enabled)
 - `ES_PASSWORD`: Elasticsearch password (if authentication is enabled)
 - `MEMORY_FILE_PATH`: Path to memory JSON file (for import/export)
+- `KG_DEFAULT_ZONE`: Default memory zone to use (default: `default`)
+- `KG_INDEX_PREFIX`: Prefix for Elasticsearch indices (default: `knowledge-graph`)
 
 ## Admin CLI Commands
 
@@ -87,26 +92,101 @@ The admin CLI provides tools for managing the knowledge graph:
 # Initialize Elasticsearch index
 node dist/admin-cli.js init
 
-# Import data from JSON file
-node dist/admin-cli.js import memory.json
+# Import data from JSON file to a specific zone
+node dist/admin-cli.js import memory.json [zone]
 
-# Export data to JSON file
-node dist/admin-cli.js export backup.json
+# Export data from a specific zone to JSON file
+node dist/admin-cli.js export backup.json [zone]
 
-# Show statistics about the knowledge graph
-node dist/admin-cli.js stats
+# Backup all zones and relations
+node dist/admin-cli.js backup full-backup.json
 
-# Search the knowledge graph with fuzzy matching and relevancy ranking
-node dist/admin-cli.js search "search query"
+# Restore from a full backup
+node dist/admin-cli.js restore full-backup.json [--yes]
+
+# Show statistics about all zones or a specific zone
+node dist/admin-cli.js stats [zone]
+
+# Search the knowledge graph with optional zone parameter
+node dist/admin-cli.js search "search query" [zone]
 
 # Show details about a specific entity
-node dist/admin-cli.js entity "John Smith"
+node dist/admin-cli.js entity "John Smith" [zone]
 
-# Reset knowledge graph (delete all data)
-node dist/admin-cli.js reset
+# Show relations for a specific entity
+node dist/admin-cli.js relations "John Smith" [zone]
+
+# List all memory zones
+node dist/admin-cli.js zones list
+
+# Add a new memory zone
+node dist/admin-cli.js zones add projectX "Project X knowledge zone"
+
+# Delete a memory zone
+node dist/admin-cli.js zones delete projectX [--yes]
+
+# Show statistics for a specific zone
+node dist/admin-cli.js zones stats projectX
+
+# Reset all zones or a specific zone
+node dist/admin-cli.js reset [zone] [--yes]
 
 # Show help
 node dist/admin-cli.js help
+```
+
+## Memory Zones
+
+The knowledge graph supports multiple memory zones to organize domain-specific knowledge. This allows you to:
+
+1. **Partition Knowledge**: Separate data into different domains (projects, departments, etc.)
+2. **Improve Query Performance**: Search within specific zones for faster and more relevant results
+3. **Maintain Context**: Keep context-specific information isolated but connected
+
+### Working with Zones
+
+```bash
+# Create a new zone
+node dist/admin-cli.js zones add projectX "Project X knowledge zone"
+
+# List all zones
+node dist/admin-cli.js zones list
+
+# Import data into a specific zone
+node dist/admin-cli.js import project-data.json projectX
+
+# Search within a specific zone
+node dist/admin-cli.js search "feature" projectX
+```
+
+### Cross-Zone Relations
+
+Entities in different zones can be related to each other. When creating a relation, you can specify the zones for both entities:
+
+```json
+{
+  "type": "relation",
+  "from": "Project Feature",
+  "fromZone": "projectX",
+  "to": "General Concept",
+  "toZone": "default",
+  "relationType": "implements"
+}
+```
+
+### Automation Support
+
+For scripting and automation, you can use the `--yes` or `-y` flag to skip confirmation prompts:
+
+```bash
+# Reset without confirmation
+node dist/admin-cli.js reset --yes
+
+# Delete a zone without confirmation
+node dist/admin-cli.js zones delete projectX --yes
+
+# Restore from backup without confirmation
+node dist/admin-cli.js restore backup.json --yes
 ```
 
 ### Search Examples
@@ -116,6 +196,9 @@ The Elasticsearch-backed knowledge graph provides powerful search capabilities:
 ```bash
 # Basic search
 node dist/admin-cli.js search "cordova plugin"
+
+# Search in a specific zone
+node dist/admin-cli.js search "feature" projectX
 
 # Fuzzy search (will find "subscription" even with typo)
 node dist/admin-cli.js search "subscrption"
@@ -159,152 +242,7 @@ The MCP server exposes the following tools for interacting with the knowledge gr
 | `open_nodes` | Get details about specific entities by name |
 | `get_recent` | Get recently accessed entities |
 
-### Tool Examples
-
-```json
-// Create entities
-{ 
-  "entities": [
-    {
-      "name": "John Smith",
-      "entityType": "Person",
-      "observations": ["Software Engineer", "Works at Acme Corp"],
-      "isImportant": true
-    }
-  ]
-}
-
-// Update entities
-{
-  "entities": [
-    {
-      "name": "John Smith",
-      "entityType": "Engineer",
-      "isImportant": false
-    }
-  ]
-}
-
-// Delete entities
-{
-  "names": ["Outdated Entity"]
-}
-
-// Create relations
-{
-  "relations": [
-    {
-      "from": "John Smith",
-      "to": "Acme Corp",
-      "relationType": "works at"
-    }
-  ]
-}
-
-// Delete relations
-{
-  "relations": [
-    {
-      "from": "John Smith",
-      "to": "Previous Company",
-      "relationType": "worked at"
-    }
-  ]
-}
-
-// Search nodes - Basic
-{
-  "query": "software engineer",
-  "entityTypes": ["Person"],
-  "sortBy": "relevance"
-}
-```
-
-### Advanced Elasticsearch Query Capabilities
-
-The `search_nodes` tool leverages Elasticsearch's powerful query capabilities. While the tool provides a simple interface for basic searches, it also fully supports Elasticsearch's query syntax for advanced usage. Here are some query approaches:
-
-#### Text-Based Queries
-
-The `query` parameter accepts the same text formats as Elasticsearch's Query String Query:
-
-```json
-// Multi-term search with operators
-{
-  "query": "software AND (java OR python) NOT intern",
-  "sortBy": "relevance"
-}
-
-// Wildcard searches
-{
-  "query": "prog*er go*ang",
-  "entityTypes": ["Person"]
-}
-
-// Fuzzy matching
-{
-  "query": "programer~1 arcitecture~2"
-}
-
-// Proximity searches
-{
-  "query": "\"machine learning\"~3"
-}
-
-// Boosting terms
-{
-  "query": "software^2 engineer frontend^0.5"
-}
-```
-
-#### Field-Specific Searches
-
-For targeted field searches, you can specify fields in the query:
-
-```json
-// Search in specific fields
-{
-  "query": "name:John AND entityType:Person",
-  "sortBy": "recent"
-}
-
-// Search observations only
-{
-  "query": "observations:\"machine learning expert\""
-}
-```
-
-#### Complex Sorting
-
-The tool supports sophisticated sorting strategies:
-
-```json
-// Sort by recency
-{
-  "query": "engineer",
-  "sortBy": "recent"
-}
-
-// Sort by importance
-{
-  "query": "engineer",
-  "sortBy": "importance"
-}
-```
-
-#### Elasticsearch Query DSL Support
-
-For power users familiar with Elasticsearch, the internal implementation translates your query into Elasticsearch Query DSL, supporting:
-
-- Multi-match queries with field boosting
-- Function score queries using:
-  - Recency decay functions
-  - Field value factors for read count
-  - Boolean filters for importance flag
-- Term and terms queries for entity type filtering
-- Highlighting with custom tagging
-
-The full power of Elasticsearch's relevance scoring based on TF/IDF and BM25 algorithms is available for more complex search needs.
+Each tool can include an optional `memory_zone` parameter to specify which zone to operate on.
 
 ## Relevancy Ranking
 
