@@ -10,7 +10,7 @@
  * - Deleting zones
  */
 
-import { KnowledgeGraphClient } from '../src/kg-client.js';
+import { KnowledgeGraphClient } from '../dist/kg-client.js';
 
 // Test zones
 const TEST_ZONE_A = 'test-zone-a';
@@ -19,7 +19,7 @@ const TEST_ZONE_MERGED = 'test-zone-merged';
 
 // Create client
 const client = new KnowledgeGraphClient({
-  elasticsearchUrl: 'http://localhost:9200',
+  node: 'http://localhost:9200',
   defaultZone: TEST_ZONE_A
 });
 

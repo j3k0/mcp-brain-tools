@@ -35,6 +35,9 @@ export class KnowledgeGraphClient {
   
   // Cache of initialized indices to avoid repeated checks
   private initializedIndices: Set<string> = new Set();
+  // Cache of existing zones to avoid repeated database queries when checking zone existence
+  // This improves performance for operations that check the same zones multiple times
+  private existingZonesCache: Record<string, boolean> = {};
 
   /**
    * Create a new KnowledgeGraphClient
@@ -130,10 +133,15 @@ export class KnowledgeGraphClient {
    * Create or update an entity
    * @param entity Entity to create or update
    * @param zone Optional memory zone name, uses defaultZone if not specified
+   * @param options Optional configuration options
+   * @param options.validateZones Whether to validate that zones exist before creating entities (default: true)
    */
   async saveEntity(
     entity: Omit<ESEntity, 'type' | 'readCount' | 'lastRead' | 'lastWrite' | 'zone'>, 
-    zone?: string
+    zone?: string,
+    options?: {
+      validateZones?: boolean;
+    }
   ): Promise<ESEntity> {
     // Validate entity name is not empty
     if (!entity.name || entity.name.trim() === '') {
@@ -142,6 +150,17 @@ export class KnowledgeGraphClient {
     
     const actualZone = zone || this.defaultZone;
     await this.initialize(actualZone);
+
+    // Default to true for zone validation
+    const validateZones = options?.validateZones ?? true;
+    
+    // Validate that zone exists if required
+    if (validateZones && actualZone !== this.defaultZone) {
+      const zoneExists = await this.zoneExists(actualZone);
+      if (!zoneExists) {
+        throw new Error(`Cannot create entity: Zone '${actualZone}' does not exist. Create the zone first.`);
+      }
+    }
 
     const now = new Date().toISOString();
     const existingEntity = await this.getEntity(entity.name, actualZone);
@@ -414,12 +433,56 @@ export class KnowledgeGraphClient {
   }
 
   /**
+   * Check if a memory zone exists
+   * @param zone Zone name to check
+   * @returns Promise<boolean> True if the zone exists, false otherwise
+   * 
+   * This method uses a caching strategy to avoid repeated database queries:
+   * 1. Default zone always exists and is automatically added to the cache
+   * 2. If the requested zone is in the cache, returns the cached result
+   * 3. Otherwise, checks the zone metadata and updates the cache
+   * 4. The cache is maintained by addMemoryZone, deleteMemoryZone, and listMemoryZones
+   */
+  async zoneExists(zone: string): Promise<boolean> {
+    if (!zone || zone === this.defaultZone) {
+      // Default zone always exists
+      this.existingZonesCache[this.defaultZone] = true;
+      return true;
+    }
+    
+    // Check cache first
+    if (this.existingZonesCache[zone] !== undefined) {
+      return this.existingZonesCache[zone];
+    }
+    
+    await this.initialize();
+    
+    // Check metadata for zone
+    const metadata = await this.getZoneMetadata(zone);
+    if (metadata) {
+      // Cache the result
+      this.existingZonesCache[zone] = true;
+      return true;
+    }
+    
+    // As a fallback, check if the index exists
+    const indexName = this.getIndexForZone(zone);
+    const indexExists = await this.client.indices.exists({ index: indexName });
+    
+    // Cache the result
+    this.existingZonesCache[zone] = indexExists;
+    
+    return indexExists;
+  }
+
+  /**
    * Create or update a relation between entities
    * @param relation Relation to create or update
    * @param fromZone Optional zone for the source entity, uses defaultZone if not specified
    * @param toZone Optional zone for the target entity, uses defaultZone if not specified
    * @param options Optional configuration options
    * @param options.autoCreateMissingEntities Whether to automatically create missing entities (default: true)
+   * @param options.validateZones Whether to validate that zones exist before creating entities or relations (default: true)
    */
   async saveRelation(
     relation: Omit<ESRelation, 'type' | 'fromZone' | 'toZone'>,
@@ -427,15 +490,33 @@ export class KnowledgeGraphClient {
     toZone?: string,
     options?: {
       autoCreateMissingEntities?: boolean;
+      validateZones?: boolean;
     }
   ): Promise<ESRelation> {
     await this.initialize();
     
     // Default to true for backwards compatibility
     const autoCreateMissingEntities = options?.autoCreateMissingEntities ?? true;
+    // Default to true for zone validation
+    const validateZones = options?.validateZones ?? true;
     
     const actualFromZone = fromZone || this.defaultZone;
     const actualToZone = toZone || this.defaultZone;
+    
+    // Validate that zones exist if required
+    if (validateZones) {
+      // Check fromZone
+      const fromZoneExists = await this.zoneExists(actualFromZone);
+      if (!fromZoneExists) {
+        throw new Error(`Cannot create relation: Source zone '${actualFromZone}' does not exist. Create the zone first.`);
+      }
+      
+      // Check toZone
+      const toZoneExists = await this.zoneExists(actualToZone);
+      if (!toZoneExists) {
+        throw new Error(`Cannot create relation: Target zone '${actualToZone}' does not exist. Create the zone first.`);
+      }
+    }
     
     // Check if both entities exist
     const fromEntity = await this.getEntityWithoutUpdatingLastRead(relation.from, actualFromZone);
@@ -471,13 +552,13 @@ export class KnowledgeGraphClient {
           zone: actualFromZone
         };
         
-        const fromIndexName = this.getIndexForZone(actualFromZone);
-        await this.client.index({
-          index: fromIndexName,
-          id: `entity:${relation.from}`,
-          document: newEntity,
-          refresh: true
-        });
+        // We've already validated the zone, so we can skip validation here
+        await this.saveEntity({
+          name: relation.from,
+          entityType: 'unknown',
+          observations: [],
+          relevanceScore: 1.0
+        }, actualFromZone, { validateZones: false });
       }
       
       if (!toEntity) {
@@ -494,13 +575,13 @@ export class KnowledgeGraphClient {
           zone: actualToZone
         };
         
-        const toIndexName = this.getIndexForZone(actualToZone);
-        await this.client.index({
-          index: toIndexName,
-          id: `entity:${relation.to}`,
-          document: newEntity,
-          refresh: true
-        });
+        // We've already validated the zone, so we can skip validation here
+        await this.saveEntity({
+          name: relation.to,
+          entityType: 'unknown',
+          observations: [],
+          relevanceScore: 1.0
+        }, actualToZone, { validateZones: false });
       }
     }
     
@@ -887,10 +968,15 @@ export class KnowledgeGraphClient {
    * Import data into the knowledge graph
    * @param data Array of entities and relations to import
    * @param zone Optional memory zone for entities, uses defaultZone if not specified
+   * @param options Optional configuration options
+   * @param options.validateZones Whether to validate that zones exist before importing (default: true)
    */
   async importData(
     data: Array<ESEntity | ESRelation>, 
-    zone?: string
+    zone?: string,
+    options?: {
+      validateZones?: boolean;
+    }
   ): Promise<{
     entitiesAdded: number;
     relationsAdded: number;
@@ -898,6 +984,17 @@ export class KnowledgeGraphClient {
   }> {
     const actualZone = zone || this.defaultZone;
     await this.initialize(actualZone);
+    
+    // Default to true for zone validation
+    const validateZones = options?.validateZones ?? true;
+    
+    // Validate that zone exists if required
+    if (validateZones && actualZone !== this.defaultZone) {
+      const zoneExists = await this.zoneExists(actualZone);
+      if (!zoneExists) {
+        throw new Error(`Cannot import data: Zone '${actualZone}' does not exist. Create the zone first.`);
+      }
+    }
     
     let entitiesAdded = 0;
     let relationsAdded = 0;
@@ -932,19 +1029,43 @@ export class KnowledgeGraphClient {
     const relationOperations: any[] = [];
     
     for (const relation of relations) {
-      // For backward compatibility, handle both old and new relation formats
-      const r = relation as any; // Type assertion to avoid property access errors
-      
-      if ('fromZone' in r && 'toZone' in r) {
-        // New format - already has fromZone and toZone
+      // For relations with explicit zones
+      if (relation.fromZone !== undefined && relation.toZone !== undefined) {
+        // If zone validation is enabled, check that both zones exist
+        if (validateZones) {
+          // Check fromZone if it's not the default zone
+          if (relation.fromZone !== this.defaultZone) {
+            const fromZoneExists = await this.zoneExists(relation.fromZone);
+            if (!fromZoneExists) {
+              invalidRelations.push({
+                relation,
+                reason: `Source zone '${relation.fromZone}' does not exist. Create the zone first.`
+              });
+              continue;
+            }
+          }
+          
+          // Check toZone if it's not the default zone
+          if (relation.toZone !== this.defaultZone) {
+            const toZoneExists = await this.zoneExists(relation.toZone);
+            if (!toZoneExists) {
+              invalidRelations.push({
+                relation,
+                reason: `Target zone '${relation.toZone}' does not exist. Create the zone first.`
+              });
+              continue;
+            }
+          }
+        }
+        
         // Verify that both entities exist
-        const fromEntity = await this.getEntityWithoutUpdatingLastRead(r.from, r.fromZone);
-        const toEntity = await this.getEntityWithoutUpdatingLastRead(r.to, r.toZone);
+        const fromEntity = await this.getEntityWithoutUpdatingLastRead(relation.from, relation.fromZone);
+        const toEntity = await this.getEntityWithoutUpdatingLastRead(relation.to, relation.toZone);
         
         if (!fromEntity) {
           invalidRelations.push({
             relation,
-            reason: `Source entity '${r.from}' in zone '${r.fromZone}' does not exist`
+            reason: `Source entity '${relation.from}' in zone '${relation.fromZone}' does not exist`
           });
           continue;
         }
@@ -952,12 +1073,12 @@ export class KnowledgeGraphClient {
         if (!toEntity) {
           invalidRelations.push({
             relation,
-            reason: `Target entity '${r.to}' in zone '${r.toZone}' does not exist`
+            reason: `Target entity '${relation.to}' in zone '${relation.toZone}' does not exist`
           });
           continue;
         }
         
-        const id = `relation:${r.fromZone}:${r.from}:${r.relationType}:${r.toZone}:${r.to}`;
+        const id = `relation:${relation.fromZone}:${relation.from}:${relation.relationType}:${relation.toZone}:${relation.to}`;
         relationOperations.push({ index: { _index: KG_RELATIONS_INDEX, _id: id } });
         relationOperations.push(relation);
         relationsAdded++;
@@ -968,13 +1089,13 @@ export class KnowledgeGraphClient {
         const toZone = actualZone;
         
         // Verify that both entities exist
-        const fromEntity = await this.getEntityWithoutUpdatingLastRead(r.from, fromZone);
-        const toEntity = await this.getEntityWithoutUpdatingLastRead(r.to, toZone);
+        const fromEntity = await this.getEntityWithoutUpdatingLastRead(relation.from, fromZone);
+        const toEntity = await this.getEntityWithoutUpdatingLastRead(relation.to, toZone);
         
         if (!fromEntity) {
           invalidRelations.push({
             relation,
-            reason: `Source entity '${r.from}' in zone '${fromZone}' does not exist`
+            reason: `Source entity '${relation.from}' in zone '${fromZone}' does not exist`
           });
           continue;
         }
@@ -982,7 +1103,7 @@ export class KnowledgeGraphClient {
         if (!toEntity) {
           invalidRelations.push({
             relation,
-            reason: `Target entity '${r.to}' in zone '${toZone}' does not exist`
+            reason: `Target entity '${relation.to}' in zone '${toZone}' does not exist`
           });
           continue;
         }
@@ -990,14 +1111,14 @@ export class KnowledgeGraphClient {
         // Convert to new format
         const newRelation: ESRelation = {
           type: 'relation',
-          from: r.from,
+          from: relation.from,
           fromZone,
-          to: r.to,
+          to: relation.to,
           toZone,
-          relationType: r.relationType
+          relationType: relation.relationType
         };
         
-        const id = `relation:${fromZone}:${r.from}:${r.relationType}:${toZone}:${r.to}`;
+        const id = `relation:${fromZone}:${relation.from}:${relation.relationType}:${toZone}:${relation.to}`;
         relationOperations.push({ index: { _index: KG_RELATIONS_INDEX, _id: id } });
         relationOperations.push(newRelation);
         relationsAdded++;
@@ -1015,6 +1136,66 @@ export class KnowledgeGraphClient {
       entitiesAdded,
       relationsAdded,
       invalidRelations: invalidRelations.length ? invalidRelations : undefined
+    };
+  }
+
+  /**
+   * Import data into the knowledge graph, recreating zones as needed
+   * @param data Export data containing entities, relations, and zone metadata
+   */
+  async importAllData(data: {
+    entities: ESEntity[],
+    relations: ESRelation[],
+    zones: ZoneMetadata[]
+  }): Promise<{
+    zonesAdded: number;
+    entitiesAdded: number;
+    relationsAdded: number;
+  }> {
+    await this.initialize();
+    
+    let zonesAdded = 0;
+    let entitiesAdded = 0;
+    let relationsAdded = 0;
+    
+    // First create all zones
+    for (const zone of data.zones) {
+      if (zone.name !== 'default') {
+        await this.addMemoryZone(zone.name, zone.description, zone.config);
+        // addMemoryZone already updates the cache
+        zonesAdded++;
+      } else {
+        // Make sure default zone is in the cache
+        this.existingZonesCache['default'] = true;
+      }
+    }
+    
+    // Import entities by zone
+    const entitiesByZone: Record<string, ESEntity[]> = {};
+    for (const entity of data.entities) {
+      const zone = entity.zone || 'default';
+      if (!entitiesByZone[zone]) {
+        entitiesByZone[zone] = [];
+      }
+      entitiesByZone[zone].push(entity);
+    }
+    
+    // Import entities for each zone
+    for (const [zone, entities] of Object.entries(entitiesByZone)) {
+      const result = await this.importData(entities, zone);
+      entitiesAdded += result.entitiesAdded;
+    }
+    
+    // Import all relations
+    if (data.relations.length > 0) {
+      const result = await this.importData(data.relations);
+      relationsAdded = result.relationsAdded;
+    }
+    
+    return {
+      zonesAdded,
+      entitiesAdded,
+      relationsAdded
     };
   }
 
@@ -1181,6 +1362,11 @@ export class KnowledgeGraphClient {
       const zones = response.hits.hits.map(hit => hit._source as ZoneMetadata);
       
       if (zones.length > 0) {
+        // Update cache with all known zones
+        zones.forEach(zone => {
+          this.existingZonesCache[zone.name] = true;
+        });
+        
         return zones;
       }
     } catch (error) {
@@ -1204,6 +1390,11 @@ export class KnowledgeGraphClient {
       createdAt: now,
       lastModified: now
     }));
+    
+    // Update cache with all detected zones
+    zones.forEach(zone => {
+      this.existingZonesCache[zone.name] = true;
+    });
     
     // Save detected zones to metadata for future
     for (const zone of zones) {
@@ -1233,6 +1424,9 @@ export class KnowledgeGraphClient {
     
     // Add to metadata
     await this.saveZoneMetadata(zone, description, config);
+    
+    // Update the cache
+    this.existingZonesCache[zone] = true;
     
     return true;
   }
@@ -1282,6 +1476,9 @@ export class KnowledgeGraphClient {
       
       // Remove from initialized indices cache
       this.initializedIndices.delete(indexName);
+      
+      // Update the zones cache
+      delete this.existingZonesCache[zone];
       
       // Clean up relations for this zone
       await this.client.deleteByQuery({
@@ -1475,62 +1672,6 @@ export class KnowledgeGraphClient {
     };
   }
   
-  /**
-   * Import data into the knowledge graph, recreating zones as needed
-   * @param data Export data containing entities, relations, and zone metadata
-   */
-  async importAllData(data: {
-    entities: ESEntity[],
-    relations: ESRelation[],
-    zones: ZoneMetadata[]
-  }): Promise<{
-    zonesAdded: number;
-    entitiesAdded: number;
-    relationsAdded: number;
-  }> {
-    await this.initialize();
-    
-    let zonesAdded = 0;
-    let entitiesAdded = 0;
-    let relationsAdded = 0;
-    
-    // First create all zones
-    for (const zone of data.zones) {
-      if (zone.name !== 'default') {
-        await this.addMemoryZone(zone.name, zone.description, zone.config);
-        zonesAdded++;
-      }
-    }
-    
-    // Import entities by zone
-    const entitiesByZone: Record<string, ESEntity[]> = {};
-    for (const entity of data.entities) {
-      const zone = entity.zone || 'default';
-      if (!entitiesByZone[zone]) {
-        entitiesByZone[zone] = [];
-      }
-      entitiesByZone[zone].push(entity);
-    }
-    
-    // Import entities for each zone
-    for (const [zone, entities] of Object.entries(entitiesByZone)) {
-      const result = await this.importData(entities, zone);
-      entitiesAdded += result.entitiesAdded;
-    }
-    
-    // Import all relations
-    if (data.relations.length > 0) {
-      const result = await this.importData(data.relations);
-      relationsAdded = result.relationsAdded;
-    }
-    
-    return {
-      zonesAdded,
-      entitiesAdded,
-      relationsAdded
-    };
-  }
-
   /**
    * Add observations to an existing entity
    * @param name Entity name
