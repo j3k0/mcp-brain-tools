@@ -226,12 +226,17 @@ async function startServer() {
               },
               limit: {
                 type: "integer",
-                description: "Max results (default: 5)"
+                description: "Max results (default: 20 if includeObservations is false, 5 if true)"
               },
               sortBy: {
                 type: "string",
                 enum: ["relevance", "recency", "importance"],
                 description: "Sort by relevance, recency, or importance"
+              },
+              includeObservations: {
+                type: "boolean",
+                description: "Whether to include full entity observations in results (default: false)",
+                default: false
               }
             },
             required: ["query"],
@@ -305,7 +310,12 @@ async function startServer() {
             properties: {
               limit: {
                 type: "integer",
-                description: "Max results (default: 5)"
+                description: "Max results (default: 20 if includeObservations is false, 5 if true)"
+              },
+              includeObservations: {
+                type: "boolean",
+                description: "Whether to include full entity observations in results (default: false)",
+                default: false
               }
             },
             additionalProperties: false,
@@ -481,11 +491,15 @@ async function startServer() {
       });
     }
     else if (toolName === "search_nodes") {
+      const includeObservations = params.includeObservations ?? false;
+      const defaultLimit = includeObservations ? 5 : 20;
+      
       const searchParams: ESSearchParams = {
         query: params.query,
         entityTypes: params.entityTypes,
-        limit: params.limit || 5,
-        sortBy: params.sortBy
+        limit: params.limit || defaultLimit,
+        sortBy: params.sortBy,
+        includeObservations
       };
       
       const results = await kgClient.search(searchParams);
@@ -493,11 +507,21 @@ async function startServer() {
       // Transform the results to the expected format, removing unnecessary fields
       const entities = results.hits.hits
         .filter((hit: any) => hit._source.type === 'entity')
-        .map((hit: any) => ({
-          name: hit._source.name,
-          entityType: hit._source.entityType,
-          observations: (hit._source as ESEntity).observations
-        }));
+        .map((hit: any) => {
+          const entity: any = {
+            name: hit._source.name,
+            entityType: hit._source.entityType,
+          };
+          
+          // Only include observations and timestamps if requested
+          if (includeObservations) {
+            entity.observations = (hit._source as ESEntity).observations;
+            entity.lastWrite = (hit._source as ESEntity).lastWrite;
+            entity.lastRead = (hit._source as ESEntity).lastRead;
+          }
+          
+          return entity;
+        });
       
       // Get relations between these entities
       const entityNames = entities.map(e => e.name);
@@ -603,13 +627,16 @@ async function startServer() {
       });
     }
     else if (toolName === "get_recent") {
-      const limit = params.limit || 5;
+      const includeObservations = params.includeObservations ?? false;
+      const defaultLimit = includeObservations ? 5 : 20;
+      const limit = params.limit || defaultLimit;
       
       // Search with empty query but sort by recency
       const searchParams: ESSearchParams = {
         query: "*", // Use wildcard instead of empty query to match all documents
         limit: limit,
-        sortBy: 'recent' // Sort by recency
+        sortBy: 'recent', // Sort by recency
+        includeObservations
       };
       
       const results = await kgClient.search(searchParams);
@@ -617,13 +644,21 @@ async function startServer() {
       // Transform the results to the expected format, removing unnecessary fields
       const entities = results.hits.hits
         .filter((hit: any) => hit._source.type === 'entity')
-        .map((hit: any) => ({
-          name: hit._source.name,
-          entityType: hit._source.entityType,
-          observations: (hit._source as ESEntity).observations,
-          lastWrite: (hit._source as ESEntity).lastWrite, // Include timestamp information
-          lastRead: (hit._source as ESEntity).lastRead
-        }));
+        .map((hit: any) => {
+          const entity: any = {
+            name: hit._source.name,
+            entityType: hit._source.entityType,
+          };
+          
+          // Only include observations and timestamps if requested
+          if (includeObservations) {
+            entity.observations = (hit._source as ESEntity).observations;
+            entity.lastWrite = (hit._source as ESEntity).lastWrite;
+            entity.lastRead = (hit._source as ESEntity).lastRead;
+          }
+          
+          return entity;
+        });
       
       // Get relations between these entities
       const entityNames = entities.map(e => e.name);
