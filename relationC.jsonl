@@ -1,1 +1,0 @@
-{"type":"relation","from":"Project A Feature","fromZone":"projecta","to":"Project B Component","toZone":"projectb","relationType":"depends_on"}

@@ -12,3 +12,8 @@ relation.jsonl
 backup.json
 multi-zone-backup.json
 launch
+launch.bak
+
+# Test data files
+test-data/
+manual-tests/
