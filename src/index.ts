@@ -859,7 +859,7 @@ async function startServer() {
       
       // Get relations between these entities
       const entityNames = filteredEntities.map(e => e.name);
-      const { relations } = await kgClient.getRelationsForEntities(entityNames);
+      const { relations } = await kgClient.getRelationsForEntities(entityNames, zone);
       
       // Map relations to the expected format
       const formattedRelations = relations.map(r => ({
