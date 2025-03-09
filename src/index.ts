@@ -256,6 +256,10 @@ async function startServer() {
                 type: "string",
                 description: "ElasticSearch query string. Use '*' for all entities."
               },
+              informationNeeds: {
+                type: "string",
+                description: "Important. Describe what information you are looking for. What questions are you trying to answer? Helps get more useful results."
+              },
               entityTypes: {
                 type: "array",
                 items: {type: "string"},
@@ -279,10 +283,6 @@ async function startServer() {
                 type: "string",
                 description: "Limit search to specific zone. Omit for default zone."
               },
-              informationNeeds: {
-                type: "string",
-                description: "Description of what information the user is looking for. Results will be filtered using AI to return only the useful entities. Be clear and detailed."
-              }
             },
             required: ["query", "informationNeeds"],
             additionalProperties: false,
@@ -797,7 +797,7 @@ async function startServer() {
       
       // If informationNeeds is provided, increase the limit to get more results
       // that will be filtered later by the AI
-      const searchLimit = informationNeeds ? (params.limit ? params.limit * 2 : defaultLimit * 2) : (params.limit || defaultLimit);
+      const searchLimit = informationNeeds ? (params.limit ? params.limit * 4 : defaultLimit * 4) : (params.limit || defaultLimit);
       
       const searchParams: ESSearchParams = {
         query: params.query,
