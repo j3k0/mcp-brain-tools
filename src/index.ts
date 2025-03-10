@@ -980,8 +980,8 @@ async function startServer() {
         zones: zones.map(zone => ({
           name: zone.name,
           description: zone.description,
-          created_at: zone.createdAt,
-          last_modified: zone.lastModified
+          // created_at: zone.createdAt,
+          // last_modified: zone.lastModified
         }))
       });
     }
