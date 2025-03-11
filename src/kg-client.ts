@@ -1353,8 +1353,9 @@ export class KnowledgeGraphClient {
 
   /**
    * List all available memory zones
+   * @param reason Optional reason for listing zones, used for AI filtering
    */
-  async listMemoryZones(): Promise<ZoneMetadata[]> {
+  async listMemoryZones(reason?: string): Promise<ZoneMetadata[]> {
     await this.initialize();
     
     try {

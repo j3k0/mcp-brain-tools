@@ -244,7 +244,94 @@ Return only the names of the entities that are relevant to my information needs 
       }
       throw error;
     }
-  }
+  },
+
+  /**
+   * Classifies zones by usefulness based on the reason for listing
+   * @param {ZoneMetadata[]} zones - Array of zone metadata objects
+   * @param {string} reason - The reason for listing zones
+   * @returns {Promise<Record<string, number>>} Object mapping zone names to usefulness scores (0-2)
+   */
+  async classifyZoneUsefulness(zones, reason) {
+    if (!reason || !zones || zones.length === 0) {
+      return {};
+    }
+
+    const status = this._checkStatus();
+    
+    if (status.isDisabled) {
+      // If AI service is disabled, return all zones as very useful
+      logger.warn('AI service temporarily disabled, returning all zones as very useful');
+      return zones.reduce((acc, zone) => {
+        acc[zone.name] = 2; // all zones marked as very useful
+        return acc;
+      }, {});
+    }
+
+    const systemPrompt = `You are an intelligent zone classifier for a knowledge graph system.
+Your task is to analyze memory zones and determine how useful each zone is to the user's current needs.
+Rate each zone on a scale from 0-2:
+0: not useful
+1: a little useful
+2: very useful
+
+Return ONLY a JSON object mapping zone names to usefulness scores. Format: {"zoneName": usefulness}`;
+
+    const zoneData = zones.map(zone => ({
+      name: zone.name,
+      description: zone.description || ''
+    }));
+
+    const userPrompt = `Reason for listing zones: ${reason}
+
+Here are the zones to classify:
+${JSON.stringify(zoneData, null, 2)}
+
+Return a JSON object mapping each zone name to its usefulness score (0-2):
+0: not useful for my reason
+1: a little useful for my reason
+2: very useful for my reason`;
+
+    try {
+      const response = await this.chatCompletion({
+        system: systemPrompt,
+        user: userPrompt
+      });
+
+      // Parse the response - expecting a JSON object mapping zone names to scores
+      try {
+        const parsedResponse = JSON.parse(response);
+        if (typeof parsedResponse === 'object' && !Array.isArray(parsedResponse)) {
+          // Validate scores are in range 0-2
+          Object.keys(parsedResponse).forEach(zoneName => {
+            const score = parsedResponse[zoneName];
+            if (typeof score !== 'number' || score < 0 || score > 2) {
+              parsedResponse[zoneName] = 2; // Default to very useful for invalid scores
+            }
+          });
+          return parsedResponse;
+        } else {
+          logger.warn('Unexpected response format from AI, returning all zones as very useful', { response });
+          return zones.reduce((acc, zone) => {
+            acc[zone.name] = 2; // all zones marked as very useful
+            return acc;
+          }, {});
+        }
+      } catch (error) {
+        logger.error('Error parsing AI response, returning all zones as very useful', { error, response });
+        return zones.reduce((acc, zone) => {
+          acc[zone.name] = 2; // all zones marked as very useful
+          return acc;
+        }, {});
+      }
+    } catch (error) {
+      logger.error('Error calling AI service, returning all zones as very useful', { error });
+      return zones.reduce((acc, zone) => {
+        acc[zone.name] = 2; // all zones marked as very useful
+        return acc;
+      }, {});
+    }
+  },
 };
 
 export default GroqAI; 

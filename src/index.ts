@@ -394,15 +394,17 @@ async function startServer() {
         },
         {
           name: "list_zones",
-          description: "List all available memory zones with metadata.",
+          description: "List all available memory zones with metadata. When a reason is provided, zones will be filtered and prioritized based on relevance to your needs.",
           inputSchema: {
             type: "object",
             properties: {
               reason: {
                 type: "string",
-                description: "Reason for listing zones. What zones are you looking for? Why are you looking for them?"
+                description: "Reason for listing zones. What zones are you looking for? Why are you looking for them? The AI will use this to prioritize and filter relevant zones."
               }
-            }
+            },
+            additionalProperties: false,
+            "$schema": "http://json-schema.org/draft-07/schema#"
           }
         },
         {
@@ -989,14 +991,68 @@ async function startServer() {
       });
     }
     else if (toolName === "list_zones") {
-      const zones = await kgClient.listMemoryZones();
+      const reason = params.reason;
+      const zones = await kgClient.listMemoryZones(reason);
       
+      // If reason is provided and GroqAI is available, use AI to score zone usefulness
+      if (reason && GroqAI.isEnabled && zones.length > 0) {
+        try {
+          // Get usefulness scores for each zone
+          const usefulnessScores = await GroqAI.classifyZoneUsefulness(zones, reason);
+          
+          // Process zones based on their usefulness scores
+          const processedZones = zones.map(zone => {
+            const usefulness = usefulnessScores[zone.name] !== undefined ? 
+              usefulnessScores[zone.name] : 2; // Default to very useful (2) if not classified
+            
+            // Format zone info based on usefulness score
+            if (usefulness === 0) { // Not useful
+              return {
+                name: zone.name,
+                usefulness: 'not useful'
+              };
+            } else if (usefulness === 1) { // A little useful
+              return {
+                name: zone.name,
+                description: zone.description,
+                usefulness: 'a little useful'
+              };
+            } else { // Very useful (2) or default
+              return {
+                name: zone.name,
+                description: zone.description,
+                created_at: zone.createdAt,
+                last_modified: zone.lastModified,
+                config: zone.config,
+                usefulness: 'very useful'
+              };
+            }
+          });
+          
+          // Sort zones by usefulness (most useful first)
+          processedZones.sort((a, b) => {
+            const scoreA = usefulnessScores[a.name] !== undefined ? usefulnessScores[a.name] : 2;
+            const scoreB = usefulnessScores[b.name] !== undefined ? usefulnessScores[b.name] : 2;
+            return scoreB - scoreA; // Descending order
+          });
+          
+          return formatResponse({
+            zones: processedZones
+          });
+        } catch (error) {
+          console.error('Error classifying zones:', error);
+          // Fall back to default behavior
+        }
+      }
+      
+      // Default behavior (no reason provided or AI failed)
       return formatResponse({
         zones: zones.map(zone => ({
           name: zone.name,
           description: zone.description,
-          // created_at: zone.createdAt,
-          // last_modified: zone.lastModified
+          created_at: zone.createdAt,
+          last_modified: zone.lastModified,
+          usefulness: 'very useful' // Default to very useful when no AI filtering is done
         }))
       });
     }
