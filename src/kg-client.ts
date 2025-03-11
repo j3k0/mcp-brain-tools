@@ -52,7 +52,7 @@ export class KnowledgeGraphClient {
       node: options.node,
       auth: options.auth,
     });
-    this.defaultZone = options.defaultZone || 'default';
+    this.defaultZone = options.defaultZone || process.env.KG_DEFAULT_ZONE || 'default';
   }
 
   private getIndexForZone(zone?: string): string {

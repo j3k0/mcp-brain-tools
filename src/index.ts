@@ -258,7 +258,11 @@ async function startServer() {
               },
               informationNeeds: {
                 type: "string",
-                description: "Important. Describe what information you are looking for. What questions are you trying to answer? Helps get more useful results."
+                description: "Important. Describe what information you are looking for, to give a precise context to the search engine AI agent. What questions are you trying to answer? Helps get more useful results."
+              },
+              reason: {
+                type: "string",
+                description: "Reason for searching. What are you looking for? Why are you looking for it? Helps get more useful results."
               },
               entityTypes: {
                 type: "array",
@@ -393,7 +397,12 @@ async function startServer() {
           description: "List all available memory zones with metadata.",
           inputSchema: {
             type: "object",
-            properties: {}
+            properties: {
+              reason: {
+                type: "string",
+                description: "Reason for listing zones. What zones are you looking for? Why are you looking for them?"
+              }
+            }
           }
         },
         {
@@ -406,9 +415,13 @@ async function startServer() {
                 type: "string",
                 description: "Zone name (cannot be 'default')"
               },
+              shortDescription: {
+                type: "string",
+                description: "Short description of the zone."
+              },
               description: {
                 type: "string",
-                description: "Optional zone description"
+                description: "Full zone description. Make it very descriptive and detailed."
               }
             },
             required: ["name"]
@@ -794,6 +807,7 @@ async function startServer() {
       const defaultLimit = includeObservations ? 5 : 20;
       const zone = params.memory_zone;
       const informationNeeds = params.informationNeeds;
+      const reason = params.reason;
       
       // If informationNeeds is provided, increase the limit to get more results
       // that will be filtered later by the AI
@@ -806,7 +820,8 @@ async function startServer() {
         sortBy: params.sortBy,
         includeObservations,
         zone,
-        informationNeeds
+        informationNeeds,
+        reason
       };
       
       const results = await kgClient.search(searchParams);
@@ -835,7 +850,7 @@ async function startServer() {
       if (informationNeeds && GroqAI.isEnabled && entities.length > 0) {
         try {
           // Get relevant entity names using AI filtering
-          const relevantEntityNames = await GroqAI.filterSearchResults(entities, informationNeeds);
+          const relevantEntityNames = await GroqAI.filterSearchResults(entities, informationNeeds, reason);
           
           // Filter entities to only include those deemed relevant by the AI
           filteredEntities = entities.filter(entity => 

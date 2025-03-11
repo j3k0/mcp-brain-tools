@@ -120,13 +120,14 @@ export const GroqAI = {
   },
 
   /**
-   * Filter search results based on user's information needs
-   * @param {any[]} searchResults - The original search results to filter
+   * Filters search results using AI to determine which entities are relevant to the user's information needs
+   * @param {Object[]} searchResults - Array of entity objects from search
    * @param {string} userInformationNeeds - Description of what the user is looking for
+   * @param {string} [reason] - Reason for the search, providing additional context
    * @returns {Promise<string[]>} Array of entity names that are relevant to the user's needs
    * @throws {Error} If the API request fails
    */
-  async filterSearchResults(searchResults, userInformationNeeds) {
+  async filterSearchResults(searchResults, userInformationNeeds, reason) {
     if (!userInformationNeeds || !searchResults || searchResults.length === 0) {
       return searchResults.map(result => result.name);
     }
@@ -143,9 +144,13 @@ export const GroqAI = {
 Your task is to analyze search results and determine which entities are useful to the user's information needs.
 Return ONLY the names of useful entities as a JSON array of strings. Nothing else.`;
 
-    const userPrompt = `I'm looking for information about: ${userInformationNeeds}
+    let userPrompt = `Why am I searching: ${userInformationNeeds}`;
+    
+    if (reason) {
+      userPrompt += `\nReason for search: ${reason}`;
+    }
 
-Here are the search results to filter:
+    userPrompt += `\n\nHere are the search results to filter:
 ${JSON.stringify(searchResults, null, 2)}
 
 Return only the names of the entities that are relevant to my information needs as a JSON array of strings.`;
