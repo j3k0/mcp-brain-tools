@@ -18,10 +18,14 @@ import {
 interface ZoneMetadata {
   name: string;
   description?: string;
+  shortDescription?: string;
   createdAt: string;
   lastModified: string;
   config?: Record<string, any>;
 }
+
+// Import the AI service
+import GroqAI from './ai-service.js';
 
 /**
  * Knowledge Graph Client
@@ -665,7 +669,7 @@ export class KnowledgeGraphClient {
     
     // Special handling for wildcard query
     if (params.query === '*') {
-      console.error(`Performing wildcard search in zone: ${actualZone}, index: ${indexName}`);
+      // console.error(`Performing wildcard search in zone: ${actualZone}, index: ${indexName}`);
       
       try {
         // Use match_all query for wildcard
@@ -681,7 +685,7 @@ export class KnowledgeGraphClient {
           }
         });
         
-        console.error(`Wildcard search results: ${JSON.stringify(response.hits)}`);
+        // console.error(`Wildcard search results: ${JSON.stringify(response.hits)}`);
         
         return response as unknown as ESHighlightResponse<ESEntity | ESRelation>;
       } catch (error) {
@@ -692,7 +696,7 @@ export class KnowledgeGraphClient {
     
     // Special handling for exact entity name search
     if (params.query && !params.query.includes(' ')) {
-      console.error(`Performing exact entity name search for "${params.query}" in zone: ${actualZone}, index: ${indexName}`);
+      // console.error(`Performing exact entity name search for "${params.query}" in zone: ${actualZone}, index: ${indexName}`);
       
       try {
         // Use match query for exact entity name
@@ -710,7 +714,7 @@ export class KnowledgeGraphClient {
           }
         });
         
-        console.error(`Exact entity name search results: ${JSON.stringify(response.hits)}`);
+        // console.error(`Exact entity name search results: ${JSON.stringify(response.hits)}`);
         
         return response as unknown as ESHighlightResponse<ESEntity | ESRelation>;
       } catch (error) {
@@ -1338,6 +1342,7 @@ export class KnowledgeGraphClient {
     const metadata: ZoneMetadata = {
       name,
       description: description || existing?.description,
+      shortDescription: existing?.shortDescription,
       createdAt: existing?.createdAt || now,
       lastModified: now,
       config: config || existing?.config
@@ -2212,5 +2217,187 @@ export class KnowledgeGraphClient {
     }
     
     return entities;
+  }
+
+  /**
+   * Update zone metadata with new descriptions
+   * @param name Zone name
+   * @param description Full description
+   * @param shortDescription Short description
+   * @param config Optional configuration
+   */
+  async updateZoneDescriptions(
+    name: string,
+    description: string,
+    shortDescription: string,
+    config?: Record<string, any>
+  ): Promise<void> {
+    await this.initialize();
+    
+    const now = new Date().toISOString();
+    
+    // Check if zone metadata exists
+    let existing: ZoneMetadata | null = null;
+    try {
+      const response = await this.client.get({
+        index: KG_METADATA_INDEX,
+        id: `zone:${name}`
+      });
+      existing = response._source as ZoneMetadata;
+    } catch (error) {
+      // Zone doesn't exist yet, create it first
+      if (!await this.zoneExists(name)) {
+        await this.addMemoryZone(name);
+      }
+    }
+    
+    const metadata: ZoneMetadata = {
+      name,
+      description,
+      shortDescription,
+      createdAt: existing?.createdAt || now,
+      lastModified: now,
+      config: config || existing?.config
+    };
+    
+    await this.client.index({
+      index: KG_METADATA_INDEX,
+      id: `zone:${name}`,
+      body: metadata,
+      refresh: true
+    });
+    
+    console.log(`Updated descriptions for zone: ${name}`);
+  }
+
+  /**
+   * High-level search method that returns clean entity data for user-facing applications
+   * This method acts as a wrapper around the raw search, with additional processing and AI filtering
+   * 
+   * @param params Search parameters including query, filters, and AI-related fields
+   * @returns Clean entity and relation data, filtered by AI if informationNeeds is provided
+   */
+  async userSearch(params: {
+    query: string;
+    entityTypes?: string[];
+    limit?: number;
+    includeObservations?: boolean;
+    sortBy?: 'relevance' | 'recent' | 'importance';
+    zone?: string;
+    informationNeeds?: string;
+    reason?: string;
+  }): Promise<{
+    entities: Array<{
+      name: string;
+      entityType: string;
+      observations?: string[];
+      lastRead?: string;
+      lastWrite?: string;
+    }>;
+    relations: Array<{
+      from: string;
+      to: string;
+      type: string;
+      fromZone: string;
+      toZone: string;
+    }>;
+  }> {
+    // Set default values
+    const includeObservations = params.includeObservations ?? false;
+    const defaultLimit = includeObservations ? 5 : 20;
+    const zone = params.zone || this.defaultZone;
+    const informationNeeds = params.informationNeeds;
+    const reason = params.reason;
+    
+    // If informationNeeds is provided, increase the limit to get more results
+    // that will be filtered later by the AI
+    const searchLimit = informationNeeds ? 
+      (params.limit ? params.limit * 4 : defaultLimit * 4) : 
+      (params.limit || defaultLimit);
+    
+    // Prepare search parameters for the raw search
+    const searchParams: ESSearchParams = {
+      query: params.query,
+      entityTypes: params.entityTypes,
+      limit: searchLimit,
+      sortBy: params.sortBy,
+      includeObservations,
+      zone,
+      informationNeeds,
+      reason
+    };
+    
+    // Perform the raw search
+    const results = await this.search(searchParams);
+    
+    // Transform the results to a clean format, removing unnecessary fields
+    const entities = results.hits.hits
+      .filter(hit => hit._source.type === 'entity')
+      .map(hit => {
+        const entity: {
+          name: string;
+          entityType: string;
+          observations?: string[];
+          lastRead?: string;
+          lastWrite?: string;
+        } = {
+          name: (hit._source as ESEntity).name,
+          entityType: (hit._source as ESEntity).entityType,
+        };
+        
+        // Only include observations and timestamps if requested
+        if (includeObservations) {
+          entity.observations = (hit._source as ESEntity).observations;
+          entity.lastWrite = (hit._source as ESEntity).lastWrite;
+          entity.lastRead = (hit._source as ESEntity).lastRead;
+        }
+        
+        return entity;
+      });
+    
+    // Apply AI filtering if informationNeeds is provided and AI is available
+    let filteredEntities = entities;
+    if (informationNeeds && GroqAI.isEnabled && entities.length > 0) {
+      try {
+        // Get relevant entity names using AI filtering
+        const relevantEntityNames = await GroqAI.filterSearchResults(entities, informationNeeds, reason);
+        
+        // Filter entities to only include those deemed relevant by the AI
+        filteredEntities = entities.filter(entity => 
+          relevantEntityNames.includes(entity.name)
+        );
+        
+        // If no entities were found relevant, fall back to the original results
+        if (filteredEntities.length === 0) {
+          filteredEntities = entities.slice(0, params.limit || defaultLimit);
+        }
+      } catch (error) {
+        console.error('Error applying AI filtering:', error);
+        // Fall back to the original results but limit to the requested amount
+        filteredEntities = entities.slice(0, params.limit || defaultLimit);
+      }
+    } else if (entities.length > (params.limit || defaultLimit)) {
+      // If we're not using AI filtering but retrieved more results due to the doubled limit,
+      // limit the results to the originally requested amount
+      filteredEntities = entities.slice(0, params.limit || defaultLimit);
+    }
+    
+    // Get relations between these entities
+    const entityNames = filteredEntities.map(e => e.name);
+    const { relations } = await this.getRelationsForEntities(entityNames, zone);
+    
+    // Map relations to a clean format
+    const formattedRelations = relations.map(r => ({
+      from: r.from,
+      to: r.to,
+      type: r.relationType,
+      fromZone: r.fromZone,
+      toZone: r.toZone
+    }));
+    
+    return { 
+      entities: filteredEntities, 
+      relations: formattedRelations 
+    };
   }
 } 

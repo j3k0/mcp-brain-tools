@@ -17,10 +17,9 @@ function getModels() {
     return process.env.GROQ_MODELS.split(',').map(x => x.trim()).filter(x => x);
   }
   return [
+    'deepseek-r1-distill-llama-70b',
     'llama-3.3-70b-versatile',
-    'llama-3.3-70b-specdec',
-    'llama-3.1-70b-versatile',
-    'llama-3.1-8b-instant',
+    'llama-3.3-70b-specdec'
   ]
 }
 
@@ -153,7 +152,8 @@ Return ONLY the names of useful entities as a JSON array of strings. Nothing els
     userPrompt += `\n\nHere are the search results to filter:
 ${JSON.stringify(searchResults, null, 2)}
 
-Return only the names of the entities that are relevant to my information needs as a JSON array of strings.`;
+Return only the names of the entities that are relevant to my information needs as a JSON array of strings. 
+IMPORTANT: Your response will be directly passed to JSON.parse(). Do NOT use markdown formatting, code blocks, or any other formatting. Return ONLY a raw, valid JSON array.`;
 
     try {
       const response = await this.chatCompletion({
@@ -161,17 +161,27 @@ Return only the names of the entities that are relevant to my information needs 
         user: userPrompt
       });
 
-      // Parse the response - expecting a JSON array of entity names
-      try {
-        const parsedResponse = JSON.parse(response);
-        if (Array.isArray(parsedResponse)) {
-          return parsedResponse;
-        } else {
-          logger.warn('Unexpected response format from AI, returning all results', { response });
+      // Handle the response based on its type
+      if (Array.isArray(response)) {
+        // If response is already an array, use it directly
+        return response;
+      } else if (typeof response === 'string') {
+        // If response is a string, try to parse it as JSON
+        try {
+          const parsedResponse = JSON.parse(response);
+          if (Array.isArray(parsedResponse)) {
+            return parsedResponse;
+          } else {
+            logger.warn('Unexpected response format from AI, returning all results', { response });
+            return searchResults.map(result => result.name);
+          }
+        } catch (error) {
+          logger.error('Error parsing AI response, returning all results', { error, response });
           return searchResults.map(result => result.name);
         }
-      } catch (error) {
-        logger.error('Error parsing AI response, returning all results', { error, response });
+      } else {
+        // For any other type of response, return all results
+        logger.warn('Unhandled response type from AI, returning all results', { responseType: typeof response });
         return searchResults.map(result => result.name);
       }
     } catch (error) {
@@ -228,14 +238,41 @@ Return only the names of the entities that are relevant to my information needs 
 
       const result = await response.json();
       const content = result.choices[0].message.content;
-      try {
-        const parsed = JSON.parse(content);
-        if (typeof parsed === 'string') {
-          return parsed;
+      
+      // Clean up the response by removing <think>...</think> tags if present
+      let cleanedContent = content;
+      
+      // Only process if content is a string
+      if (typeof content === 'string') {
+        if (content.includes('<think>')) {
+          const thinkingTagRegex = /<think>[\s\S]*?<\/think>/g;
+          cleanedContent = content.replace(thinkingTagRegex, '').trim();
+          
+          // Log the cleaning if in debug mode
+          if (process.env.DEBUG_AI === 'true') {
+            logger.debug('Cleaned AI response by removing thinking tags');
+          }
         }
+        
+        try {
+          // Try to parse as JSON if it looks like JSON
+          if ((cleanedContent.startsWith('{') && cleanedContent.endsWith('}')) || 
+              (cleanedContent.startsWith('[') && cleanedContent.endsWith(']'))) {
+            const parsed = JSON.parse(cleanedContent);
+            return parsed;
+          }
+        } catch (error) {
+          // If parsing fails, return cleaned string content
+          if (process.env.DEBUG_AI === 'true') {
+            logger.debug('Failed to parse response as JSON:', error.message);
+          }
+        }
+      } else if (typeof content === 'object') {
+        // If the content is already an object, return it directly
+        return content;
       }
-      catch (error) {}
-      return content;
+      
+      return cleanedContent;
     } catch (error) {
       if (error.message.includes('Too Many Requests')) {
         if (this._moveToNextModel()) {
@@ -330,6 +367,144 @@ Return a JSON object mapping each zone name to its usefulness score (0-2):
         acc[zone.name] = 2; // all zones marked as very useful
         return acc;
       }, {});
+    }
+  },
+
+  /**
+   * Generates descriptions for a zone based on its content
+   * @param {string} zoneName - The name of the zone
+   * @param {string} currentDescription - The current description of the zone (if any)
+   * @param {Array} relevantEntities - Array of the most relevant entities in the zone
+   * @param {string} [userPrompt] - Optional user-provided description of the zone's purpose
+   * @returns {Promise<{description: string, shortDescription: string}>} Generated descriptions
+   */
+  async generateZoneDescriptions(zoneName, currentDescription, relevantEntities, userPrompt) {
+    if (!relevantEntities || relevantEntities.length === 0) {
+      return {
+        description: currentDescription || `Zone: ${zoneName}`,
+        shortDescription: currentDescription || zoneName
+      };
+    }
+
+    const status = this._checkStatus();
+    
+    if (status.isDisabled) {
+      // If AI service is disabled, return current description
+      logger.warn('AI service temporarily disabled, returning existing description');
+      return {
+        description: currentDescription || `Zone: ${zoneName}`,
+        shortDescription: currentDescription || zoneName
+      };
+    }
+
+    const systemPrompt = `You are an AI assistant that generates concise and informative descriptions for memory zones in a knowledge graph system.
+Your primary task is to answer the question: "What is ${zoneName}?" based on the content within this zone.
+
+Based on the zone name and the entities it contains, create two descriptions:
+1. A full description (up to 200 words) that explains what this zone is, its purpose, and content in detail. This should clearly answer "What is ${zoneName}? No general bulshit, focus on the specifics, what makes unique."
+2. A short description (15-25 words) that succinctly explains what ${zoneName} is.
+
+Your descriptions should be clear, informative, and accurately reflect the zone's content.
+Avoid using generic phrases like "This zone contains..." or "A collection of...".
+Instead, focus on the specific subject matter and purpose of the zone.
+
+IMPORTANT: Your response will be directly passed to JSON.parse(). Do NOT use markdown formatting, code blocks, or any other formatting. Return ONLY a raw, valid JSON object with "description" and "shortDescription" fields. For example:
+{"description": "This is a description", "shortDescription": "Short description"}`;
+
+    let userPromptText = `Zone name: ${zoneName}
+Current description: ${currentDescription || 'None'}
+
+Here are the most relevant entities in this zone:
+${JSON.stringify(relevantEntities, null, 2)}`;
+
+    // If user provided additional context, include it
+    if (userPrompt) {
+      userPromptText += `\n\nUser-provided zone purpose: ${userPrompt}`;
+    }
+
+    userPromptText += `\n\nGenerate two descriptions that answer "What is ${zoneName}?":
+1. A full description (up to 200 words)
+2. A short description (15-25 words)
+
+Return your response as a raw, valid JSON object with "description" and "shortDescription" fields. Do NOT use markdown formatting, code blocks or any other formatting. Just the raw JSON object.`;
+
+    try {
+      const response = await this.chatCompletion({
+        system: systemPrompt,
+        user: userPromptText
+      });
+
+      // Log the raw response for debugging purposes
+      if (process.env.DEBUG_AI === 'true') {
+        logger.debug('Raw AI response:', response);
+      }
+
+      // Handle the response
+      try {
+        // If the response is already an object with the expected format, use it directly
+        if (typeof response === 'object' && 
+            typeof response.description === 'string' && 
+            typeof response.shortDescription === 'string') {
+          return {
+            description: response.description,
+            shortDescription: response.shortDescription
+          };
+        }
+        
+        // If the response is a string, try to parse it
+        if (typeof response === 'string') {
+          // First, try to clean up the response if it contains markdown formatting
+          let cleanedResponse = response;
+          
+          // Remove markdown code blocks if present
+          if (response.includes('```')) {
+            // Extract the content between the first and last ```
+            const matches = response.match(/```(?:json)?\s*([\s\S]*?)```/);
+            if (matches && matches[1]) {
+              cleanedResponse = matches[1].trim();
+            }
+          }
+          
+          // Remove any additional markdown or whitespace
+          cleanedResponse = cleanedResponse.trim();
+          
+          // Log the cleaned response for debugging purposes
+          if (process.env.DEBUG_AI === 'true') {
+            logger.debug('Cleaned AI response:', cleanedResponse);
+          }
+          
+          // Try to parse the cleaned response
+          const parsedResponse = JSON.parse(cleanedResponse);
+          
+          if (typeof parsedResponse === 'object' && 
+              typeof parsedResponse.description === 'string' && 
+              typeof parsedResponse.shortDescription === 'string') {
+            return {
+              description: parsedResponse.description,
+              shortDescription: parsedResponse.shortDescription
+            };
+          }
+        }
+        
+        // If we get here, the response format is unexpected
+        logger.warn('Unexpected response format from AI, returning existing description', { response });
+        return {
+          description: currentDescription || `Zone: ${zoneName}`,
+          shortDescription: currentDescription || zoneName
+        };
+      } catch (error) {
+        logger.error('Error parsing AI response, returning existing description', { error, response });
+        return {
+          description: currentDescription || `Zone: ${zoneName}`,
+          shortDescription: currentDescription || zoneName
+        };
+      }
+    } catch (error) {
+      logger.error('Error calling AI service, returning existing description', { error });
+      return {
+        description: currentDescription || `Zone: ${zoneName}`,
+        shortDescription: currentDescription || zoneName
+      };
     }
   },
 };

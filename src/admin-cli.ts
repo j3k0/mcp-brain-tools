@@ -6,6 +6,7 @@ import { KnowledgeGraphClient } from './kg-client.js';
 import { ESEntity, ESRelation, KG_RELATIONS_INDEX } from './es-types.js';
 import { importFromJsonFile, exportToJsonFile } from './json-to-es.js';
 import readline from 'readline';
+import GroqAI from './ai-service.js';
 
 // Environment configuration for Elasticsearch
 const ES_NODE = process.env.ES_NODE || 'http://localhost:9200';
@@ -46,11 +47,14 @@ function showHelp() {
   console.log('  stats [zone]               Display statistics about the knowledge graph');
   console.log('  search <query> [zone]      Search the knowledge graph');
   console.log('  reset [zone] [--yes]       Reset the knowledge graph (delete all data)');
-  console.log('  entity <name> [zone]       Display information about a specific entity');
+  console.log('  entity <n> [zone]          Display information about a specific entity');
   console.log('  zones list                 List all memory zones');
   console.log('  zones add <name> [desc]    Add a new memory zone');
   console.log('  zones delete <name> [--yes] Delete a memory zone and all its data');
   console.log('  zones stats <name>         Show statistics for a specific zone');
+  console.log('  zones update_descriptions <name> [limit] [prompt]');
+  console.log('                             Generate AI descriptions based on zone content');
+  console.log('                             (limit: optional entity limit, prompt: optional description of zone purpose)');
   console.log('  relations <entity> [zone]  Show relations for a specific entity');
   console.log('  help                       Show this help information');
   console.log('');
@@ -652,6 +656,161 @@ async function confirmAction(message: string, args: string[]): Promise<boolean> 
 }
 
 /**
+ * Update zone descriptions based on content
+ * @param zone Zone name to update
+ * @param limit Optional maximum number of entities to analyze
+ * @param userPrompt Optional user-provided description of the zone's purpose
+ */
+async function updateZoneDescriptions(zone: string, limit: number = 20, userPrompt?: string) {
+  try {
+    console.log(`Updating descriptions for zone "${zone}" based on content...`);
+    
+    // Initialize client
+    await kgClient.initialize(zone);
+    
+    // Get current zone metadata
+    const zoneMetadata = await kgClient.getZoneMetadata(zone);
+    if (!zoneMetadata) {
+      console.error(`Zone "${zone}" not found`);
+      process.exit(1);
+    }
+    
+    console.log(`Finding the most representative entities to answer "What is ${zone}?"...`);
+    
+    // Try multiple search strategies to get the most representative entities
+    const relevantEntities = [];
+    
+    // If user provided a prompt, search for it specifically
+    if (userPrompt) {
+      console.log(`Using user-provided description: "${userPrompt}"`);
+      
+      const { entities: promptEntities } = await kgClient.userSearch({
+        query: userPrompt,
+        limit: limit,
+        sortBy: 'importance', 
+        includeObservations: true,
+        informationNeeds: zone !== 'default' ? `What is ${zone}?` : undefined,
+        reason: `Trying to figure out what ${zone} is about, in order to update the zone description.`,
+        zone: zone
+      });
+      
+      relevantEntities.push(...promptEntities);
+    }
+    
+    // Strategy 1: First get most important entities
+    if (relevantEntities.length < limit) {
+      const { entities: importantEntities } = await kgClient.userSearch({
+        query: "*", // Get all entities
+        limit: Math.floor(limit / 2),
+        sortBy: 'importance',
+        includeObservations: true,
+        informationNeeds: zone !== 'default' ? `What is ${zone}?` : undefined,
+        reason: `Trying to figure out what ${zone} is about, in order to update the zone description.`,
+        zone: zone
+      });
+      
+      // Add only new entities
+      for (const entity of importantEntities) {
+        if (!relevantEntities.some(e => 
+          e.entityType && // Make sure we're comparing entities
+          entity.entityType && 
+          e.name === entity.name
+        )) {
+          relevantEntities.push(entity);
+        }
+      }
+    }
+    
+    // Strategy 2: Use zone name as search query to find semantically related entities
+    if (relevantEntities.length < limit) {
+      const { entities: nameEntities } = await kgClient.userSearch({
+        query: zone, // Use zone name as search query
+        limit: Math.ceil(limit / 4),
+        sortBy: 'relevance',
+        includeObservations: true,
+        informationNeeds: zone !== 'default' ? `What is ${zone}?` : undefined,
+        reason: `Trying to figure out what ${zone} is about, in order to update the zone description.`,
+        zone: zone
+      });
+      
+      // Add only new entities not already in the list
+      for (const entity of nameEntities) {
+        if (!relevantEntities.some(e => 
+          e.entityType && // Make sure we're comparing entities
+          entity.entityType && 
+          e.name === entity.name
+        )) {
+          relevantEntities.push(entity);
+        }
+      }
+    }
+    
+    // Strategy 3: Get most frequently accessed entities
+    if (relevantEntities.length < limit) {
+      const { entities: recentEntities } = await kgClient.userSearch({
+        query: "*", // Get all entities
+        limit: Math.ceil(limit / 4),
+        sortBy: 'recent',
+        includeObservations: true,
+        informationNeeds: zone !== 'default' ? `What is ${zone}?` : undefined,
+        reason: `Trying to figure out what ${zone} is about, in order to update the zone description.`,
+        zone: zone
+      });
+      
+      // Add only new entities not already in the list
+      for (const entity of recentEntities) {
+        if (!relevantEntities.some(e => 
+          e.entityType && // Make sure we're comparing entities
+          entity.entityType && 
+          e.name === entity.name
+        )) {
+          relevantEntities.push(entity);
+        }
+      }
+    }
+    
+    if (relevantEntities.length === 0) {
+      console.log(`No entities found in zone "${zone}" to analyze.`);
+      return;
+    }
+    
+    // Trim to limit
+    const finalEntities = relevantEntities.slice(0, limit);
+    
+    console.log(`Found ${finalEntities.length} representative entities to analyze for zone description.`);
+    
+    // Generate descriptions using AI
+    console.log("\nGenerating descriptions...");
+    try {
+      const descriptions = await GroqAI.generateZoneDescriptions(
+        zone, 
+        zoneMetadata.description || '',
+        finalEntities,
+        userPrompt
+      );
+      
+      // Update the zone with new descriptions
+      await kgClient.updateZoneDescriptions(
+        zone,
+        descriptions.description,
+        descriptions.shortDescription
+      );
+      
+      console.log(`\nUpdated descriptions for zone "${zone}":`);
+      console.log(`\nShort Description: ${descriptions.shortDescription}`);
+      console.log(`\nFull Description: ${descriptions.description}`);
+    } catch (error) {
+      console.error(`\nError generating descriptions: ${error.message}`);
+      console.log('\nFalling back to existing description. Please try again or provide a more specific prompt.');
+    }
+    
+  } catch (error) {
+    console.error('Error updating zone descriptions:', (error as Error).message);
+    process.exit(1);
+  }
+}
+
+/**
  * Main function to parse and execute commands
  */
 async function main() {
@@ -766,6 +925,34 @@ async function main() {
             process.exit(1);
           }
           await showStats(cleanedArgs[2]);
+          break;
+        
+        case 'update_descriptions':
+          if (!cleanedArgs[2]) {
+            console.error('Error: Zone name is required');
+            process.exit(1);
+          }
+          
+          let limit = 20;
+          let userPrompt = undefined;
+          
+          // Check if the third argument is a number (limit) or a string (userPrompt)
+          if (cleanedArgs[3]) {
+            const parsedLimit = parseInt(cleanedArgs[3], 10);
+            if (!isNaN(parsedLimit) && parsedLimit.toString() === cleanedArgs[3]) {
+              // Only interpret as a limit if it's a pure number with no text
+              limit = parsedLimit;
+              // If there's a fourth argument, it's the user prompt
+              if (cleanedArgs[4]) {
+                userPrompt = cleanedArgs.slice(4).join(' ');
+              }
+            } else {
+              // If third argument isn't a pure number, it's the start of the user prompt
+              userPrompt = cleanedArgs.slice(3).join(' ');
+            }
+          }
+          
+          await updateZoneDescriptions(cleanedArgs[2], limit, userPrompt);
           break;
         
         default:

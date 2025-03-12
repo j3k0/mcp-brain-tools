@@ -254,7 +254,7 @@ async function startServer() {
             properties: {
               query: {
                 type: "string",
-                description: "ElasticSearch query string. Use '*' for all entities."
+                description: "ElasticSearch query string."
               },
               informationNeeds: {
                 type: "string",
@@ -806,86 +806,19 @@ async function startServer() {
     }
     else if (toolName === "search_nodes") {
       const includeObservations = params.includeObservations ?? false;
-      const defaultLimit = includeObservations ? 5 : 20;
       const zone = params.memory_zone;
-      const informationNeeds = params.informationNeeds;
-      const reason = params.reason;
       
-      // If informationNeeds is provided, increase the limit to get more results
-      // that will be filtered later by the AI
-      const searchLimit = informationNeeds ? (params.limit ? params.limit * 4 : defaultLimit * 4) : (params.limit || defaultLimit);
-      
-      const searchParams: ESSearchParams = {
+      // Use the high-level userSearch method that handles AI filtering internally
+      const { entities: filteredEntities, relations: formattedRelations } = await kgClient.userSearch({
         query: params.query,
         entityTypes: params.entityTypes,
-        limit: searchLimit, // Double the limit if we're going to filter with AI
+        limit: params.limit,
         sortBy: params.sortBy,
         includeObservations,
         zone,
-        informationNeeds,
-        reason
-      };
-      
-      const results = await kgClient.search(searchParams);
-      
-      // Transform the results to the expected format, removing unnecessary fields
-      const entities = results.hits.hits
-        .filter((hit: any) => hit._source.type === 'entity')
-        .map((hit: any) => {
-          const entity: any = {
-            name: hit._source.name,
-            entityType: hit._source.entityType,
-          };
-          
-          // Only include observations and timestamps if requested
-          if (includeObservations) {
-            entity.observations = (hit._source as ESEntity).observations;
-            entity.lastWrite = (hit._source as ESEntity).lastWrite;
-            entity.lastRead = (hit._source as ESEntity).lastRead;
-          }
-          
-          return entity;
-        });
-      
-      // Apply AI filtering if informationNeeds is provided and GroqAI is enabled
-      let filteredEntities = entities;
-      if (informationNeeds && GroqAI.isEnabled && entities.length > 0) {
-        try {
-          // Get relevant entity names using AI filtering
-          const relevantEntityNames = await GroqAI.filterSearchResults(entities, informationNeeds, reason);
-          
-          // Filter entities to only include those deemed relevant by the AI
-          filteredEntities = entities.filter(entity => 
-            relevantEntityNames.includes(entity.name)
-          );
-          
-          // If no entities were found relevant, fall back to the original results
-          if (filteredEntities.length === 0) {
-            filteredEntities = entities.slice(0, params.limit || defaultLimit);
-          }
-        } catch (error) {
-          console.error('Error applying AI filtering:', error);
-          // Fall back to the original results but limit to the requested amount
-          filteredEntities = entities.slice(0, params.limit || defaultLimit);
-        }
-      } else if (entities.length > (params.limit || defaultLimit)) {
-        // If we're not using AI filtering but retrieved more results due to the doubled limit,
-        // limit the results to the originally requested amount
-        filteredEntities = entities.slice(0, params.limit || defaultLimit);
-      }
-      
-      // Get relations between these entities
-      const entityNames = filteredEntities.map(e => e.name);
-      const { relations } = await kgClient.getRelationsForEntities(entityNames, zone);
-      
-      // Map relations to the expected format
-      const formattedRelations = relations.map(r => ({
-        from: r.from,
-        to: r.to,
-        type: r.relationType,
-        fromZone: r.fromZone,
-        toZone: r.toZone
-      }));
+        informationNeeds: params.informationNeeds,
+        reason: params.reason
+      });
       
       return formatResponse({ entities: filteredEntities, relations: formattedRelations });
     }
