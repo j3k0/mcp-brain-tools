@@ -1477,16 +1477,37 @@ export class KnowledgeGraphClient {
     try {
       const indexName = this.getIndexForZone(zone);
       
-      // Delete the index
-      await this.client.indices.delete({
+      // Check if index exists before trying to delete it
+      const indexExists = await this.client.indices.exists({
         index: indexName
       });
       
-      // Delete from metadata
-      await this.client.delete({
-        index: KG_METADATA_INDEX,
-        id: `zone:${zone}`
-      });
+      if (indexExists) {
+        // Delete the index
+        await this.client.indices.delete({
+          index: indexName
+        });
+        console.error(`Deleted index: ${indexName}`);
+      }
+      
+      // Check if metadata exists before trying to delete it
+      try {
+        const metadataExists = await this.client.exists({
+          index: KG_METADATA_INDEX,
+          id: `zone:${zone}`
+        });
+        
+        if (metadataExists) {
+          // Delete from metadata
+          await this.client.delete({
+            index: KG_METADATA_INDEX,
+            id: `zone:${zone}`
+          });
+        }
+      } catch (metadataError) {
+        // Log but continue even if metadata deletion fails
+        console.error(`Warning: Error checking/deleting metadata for zone ${zone}:`, metadataError.message);
+      }
       
       // Remove from initialized indices cache
       this.initializedIndices.delete(indexName);
@@ -1495,21 +1516,26 @@ export class KnowledgeGraphClient {
       delete this.existingZonesCache[zone];
       
       // Clean up relations for this zone
-      await this.client.deleteByQuery({
-        index: KG_RELATIONS_INDEX,
-        body: {
-          query: {
-            bool: {
-              should: [
-                { term: { fromZone: zone } },
-                { term: { toZone: zone } }
-              ],
-              minimum_should_match: 1
+      try {
+        await this.client.deleteByQuery({
+          index: KG_RELATIONS_INDEX,
+          body: {
+            query: {
+              bool: {
+                should: [
+                  { term: { fromZone: zone } },
+                  { term: { toZone: zone } }
+                ],
+                minimum_should_match: 1
+              }
             }
-          }
-        },
-        refresh: true
-      });
+          },
+          refresh: true
+        });
+      } catch (relationError) {
+        // Log but continue even if relation cleanup fails
+        console.error(`Warning: Error cleaning up relations for zone ${zone}:`, relationError.message);
+      }
       
       return true;
     } catch (error) {
