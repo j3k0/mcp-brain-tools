@@ -2,6 +2,10 @@
 
 A scalable knowledge graph implementation for Model Context Protocol (MCP) using Elasticsearch as the backend. This implementation is designed to replace the previous JSON file-based approach with a more scalable, performant solution.
 
+<a href="https://glama.ai/mcp/servers/h9w4cyfdqx">
+  <img width="380" height="200" src="https://glama.ai/mcp/servers/h9w4cyfdqx/badge" alt="Elasticsearch Knowledge Graph for MCP server" />
+</a>
+
 ## Key Features
 
 - **Scalable Storage**: Elasticsearch provides distributed, scalable storage for knowledge graph entities and relations
