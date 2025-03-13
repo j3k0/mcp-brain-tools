@@ -192,6 +192,48 @@ node dist/admin-cli.js zones add client-acme "ACME Corp Project Knowledge"
 node dist/admin-cli.js import acme-data.json client-acme
 ```
 
+### Conversational Memory Management
+
+You can also instruct the assistant to organize memories in different zones through natural conversation:
+
+**Creating and Using Memory Zones**
+
+```
+User: Claude, can you create a new memory zone called "work-project" for storing information about my current work project?
+
+Claude: I've created a new memory zone called "work-project". I'll store information related to your work project in this zone. What would you like me to remember about your project?
+
+User: The project deadline is March 15th, and we're building a new inventory management system.
+
+Claude: I've stored information about your work project in the "work-project" zone, including the March 15th deadline and that you're building an inventory management system. I'll keep future information about this project organized in this zone.
+(Behind the scenes: Claude creates a new memory zone and stores project information specifically in that zone)
+```
+
+**Retrieving Zone-Specific Information**
+
+```
+User: What do you remember about my work project?
+
+Claude: Based on what we've discussed about your work project, I recall that you're building an inventory management system with a deadline of March 15th.
+(Behind the scenes: Claude specifically searches the "work-project" zone for relevant information)
+```
+
+**Switching Between Memory Zones**
+
+```
+User: Claude, let's switch to my "cooking" memory zone now. I want to discuss a recipe.
+
+Claude: I've switched to your "cooking" memory zone. What recipe would you like to discuss today?
+(Behind the scenes: Claude updates its memory context to prioritize searching in the "cooking" zone)
+
+User: What was that pasta dish I told you about last month?
+
+Claude: From our previous conversations in your cooking zone, you shared a carbonara recipe that used pancetta, eggs, pecorino cheese, and black pepper. You mentioned it was a family favorite that you learned during your trip to Rome.
+(Behind the scenes: Claude searches specifically in the "cooking" zone to find this information)
+```
+
+By organizing memory into separate zones, conversations become more relevant and focused on the current topic or project.
+
 ### Search Capabilities
 
 Leverage Elasticsearch's powerful search features:
