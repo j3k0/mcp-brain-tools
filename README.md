@@ -1,269 +1,202 @@
-# Elasticsearch Knowledge Graph for MCP
+# MCP Memory: Persistent Memory for AI Conversations 🧠
 
-A scalable knowledge graph implementation for Model Context Protocol (MCP) using Elasticsearch as the backend. This implementation is designed to replace the previous JSON file-based approach with a more scalable, performant solution.
+![Version](https://img.shields.io/badge/version-1.0.0-blue)
+![License](https://img.shields.io/badge/license-MIT-green)
+![Elasticsearch](https://img.shields.io/badge/Elasticsearch-7.x-yellow)
+![Node](https://img.shields.io/badge/node-18+-green)
 
-## Key Features
+> **Give your AI a memory that persists across conversations.** Never lose important context again.
 
-- **Scalable Storage**: Elasticsearch provides distributed, scalable storage for knowledge graph entities and relations
-- **Advanced Search**: Full-text search with fuzzy matching and relevancy ranking
-- **Memory-like Behavior**: Tracks access patterns to prioritize recently viewed and important entities
-- **Import/Export Tools**: Easy migration from existing JSON-based knowledge graphs
-- **Rich Query API**: Advanced querying capabilities not possible with the previous implementation
-- **Admin Tools**: Management CLI for inspecting and maintaining the knowledge graph
-- **Complete CRUD Operations**: Full create, read, update, and delete capabilities for entities and relations
-- **Elasticsearch Query Support**: Native support for Elasticsearch query DSL for advanced search capabilities
-- **Multi-Zone Architecture**: Separate memory zones for organizing domain-specific knowledge
-- **Cross-Zone Relations**: Relations between entities in different memory zones
+MCP Memory is a robust, Elasticsearch-backed knowledge graph system that gives AI models persistent memory beyond the limits of their context windows. Built for the Model Context Protocol (MCP), it ensures your LLMs remember important information forever, creating more coherent, personalized, and effective AI conversations.
 
-## Architecture
+<p align="center">
+  <img src="https://via.placeholder.com/800x400?text=MCP+Memory+Visualization" alt="MCP Memory Visualization" width="600">
+</p>
 
-The knowledge graph system consists of:
+## 🌟 Why AI Models Need Persistent Memory
 
-1. **Elasticsearch Cluster**: Core data store for entities and relations
-2. **Knowledge Graph Library**: TypeScript interface to Elasticsearch with all core operations
-3. **MCP Server**: Protocol-compliant server for AI models to interact with the knowledge graph
-4. **Admin CLI**: Command-line tools for maintenance and management
-5. **Import/Export Tools**: Utilities for data migration and backup
-6. **Multiple Memory Zones**: Ability to partition knowledge into separate zones/indices
+Ever experienced these frustrations with AI assistants?
 
-## Getting Started
+- Your AI forgetting crucial details from earlier conversations
+- Having to repeat the same context every time you start a new chat
+- Losing valuable insights once the conversation history fills up
+- Inability to reference past work or decisions
 
-### Prerequisites
+MCP Memory solves these problems by creating a structured, searchable memory store that preserves context indefinitely. Your AI can now build meaningful, long-term relationships with users and maintain coherence across days, weeks, or months of interactions.
 
-- Node.js 18+
-- Docker and Docker Compose
+## ✨ Key Features
 
-### Installation
+- **📊 Persistent Memory**: Store and retrieve information across multiple sessions
+- **🔍 Smart Search**: Find exactly what you need with powerful Elasticsearch queries
+- **📓 Contextual Recall**: AI automatically prioritizes relevant information based on the conversation
+- **🧩 Relational Understanding**: Connect concepts with relationships that mimic human associative memory
+- **🔄 Long-term / Short-term Memory**: Distinguish between temporary details and important knowledge
+- **🗂️ Memory Zones**: Organize information into separate domains (projects, clients, topics)
+- **🔒 Reliable & Scalable**: Built on Elasticsearch for enterprise-grade performance
 
-1. Clone the repository:
-   ```bash
-   git clone https://github.com/mcp-servers/mcp-servers.git
-   cd mcp-servers/memory
-   ```
+## 🚀 5-Minute Setup
 
-2. Install dependencies:
-   ```bash
-   npm install
-   ```
-
-3. Start the Elasticsearch cluster:
-   ```bash
-   npm run es:start
-   ```
-
-4. Build the project:
-   ```bash
-   npm run build
-   ```
-
-### Migration from JSON
-
-If you have an existing JSON-based knowledge graph, you can import it:
+Getting started is incredibly simple:
 
 ```bash
-node dist/admin-cli.js init
-node dist/admin-cli.js import memory.json
-```
+# 1. Clone the repository
+git clone https://github.com/mcp-servers/mcp-servers.git
+cd mcp-servers/memory
 
-### Running the MCP Server
+# 2. Install dependencies
+npm install
 
-Start the MCP server that connects to Elasticsearch:
+# 3. Start Elasticsearch (uses Docker)
+npm run es:start
 
-```bash
+# 4. Build the project
+npm run build
+
+# 5. Start the MCP server
 npm start
 ```
 
-## Configuration
+That's it! Your AI now has a persistent memory system.
 
-The system can be configured via environment variables:
+## 💡 How It Works
 
-- `ES_NODE`: Elasticsearch node URL (default: `http://localhost:9200`)
-- `ES_USERNAME`: Elasticsearch username (if authentication is enabled)
-- `ES_PASSWORD`: Elasticsearch password (if authentication is enabled)
-- `MEMORY_FILE_PATH`: Path to memory JSON file (for import/export)
-- `KG_DEFAULT_ZONE`: Default memory zone to use (default: `default`)
-- `KG_INDEX_PREFIX`: Prefix for Elasticsearch indices (default: `knowledge-graph`)
+MCP Memory creates a structured knowledge graph where:
 
-## Admin CLI Commands
+1. **Entities** represent people, concepts, projects, or anything worth remembering
+2. **Relations** connect entities, creating a network of associations
+3. **Observations** capture specific details about entities
+4. **Relevance scoring** determines what information to prioritize
 
-The admin CLI provides tools for managing the knowledge graph:
+When integrated with an LLM, the system automatically:
+- Stores new information learned during conversations
+- Retrieves relevant context when needed
+- Builds connections between related concepts
+- Forgets unimportant details while preserving critical knowledge
+
+## 🛠️ Usage Examples
+
+### Remembering User Preferences
+
+```javascript
+// Store a user preference
+await memoryClient.createEntities({
+  entities: [{
+    name: "Jane Smith",
+    entityType: "Person",
+    observations: ["Prefers dark mode", "Lives in Boston"]
+  }]
+});
+
+// Later, retrieve those preferences
+const results = await memoryClient.searchNodes({
+  query: "Jane Smith preferences",
+  informationNeeds: "What UI preferences does Jane have?"
+});
+```
+
+### Project Context
+
+```javascript
+// Store project information
+await memoryClient.createEntities({
+  entities: [{
+    name: "Project Apollo",
+    entityType: "Project",
+    observations: ["Started on May 15, 2023", "Deadline is December 1, 2023"]
+  }]
+});
+
+// Connect team members to project
+await memoryClient.createRelations({
+  relations: [
+    { from: "Jane Smith", to: "Project Apollo", type: "works on" }
+  ]
+});
+```
+
+### Adding New Observations
+
+```javascript
+// Add new learnings about an entity
+await memoryClient.addObservations({
+  name: "Project Apollo",
+  observations: ["Budget increased to $250K on July 3"]
+});
+```
+
+## 🔎 Real-World Applications
+
+- **Customer Support**: Remember details about customers and their past issues
+- **Project Management**: Maintain context about projects, decisions, and discussions
+- **Personal Assistants**: Build a personalized memory of user preferences and history
+- **Education**: Remember student progress and learning patterns
+- **Research**: Maintain knowledge graphs of complex research domains
+
+## 📊 Memory vs. Traditional Approaches
+
+| Feature | MCP Memory | Conversation History | Vector Databases | Traditional Databases |
+|---------|------------|---------------------|------------------|------------------------|
+| Persistence across sessions | ✅ | ❌ | ✅ | ✅ |
+| Relationships between concepts | ✅ | ❌ | ⚠️ Limited | ⚠️ Limited |
+| Automatic relevance ranking | ✅ | ❌ | ✅ | ❌ |
+| Query flexibility | ✅ | ❌ | ⚠️ Limited | ✅ |
+| Scalability | ✅ | ❌ | ✅ | ✅ |
+| Memory organization | ✅ | ❌ | ⚠️ Limited | ⚠️ Limited |
+
+## 🧰 Admin Tools
+
+MCP Memory includes a comprehensive admin CLI for maintaining your knowledge graph:
 
 ```bash
-# Initialize Elasticsearch index
-node dist/admin-cli.js init
+# Search the memory
+node dist/admin-cli.js search "project deadline"
 
-# Import data from JSON file to a specific zone
-node dist/admin-cli.js import memory.json [zone]
+# View details about a specific entity
+node dist/admin-cli.js entity "Jane Smith"
 
-# Export data from a specific zone to JSON file
-node dist/admin-cli.js export backup.json [zone]
-
-# Backup all zones and relations
-node dist/admin-cli.js backup full-backup.json
-
-# Restore from a full backup
-node dist/admin-cli.js restore full-backup.json [--yes]
-
-# Show statistics about all zones or a specific zone
-node dist/admin-cli.js stats [zone]
-
-# Search the knowledge graph with optional zone parameter
-node dist/admin-cli.js search "search query" [zone]
-
-# Show details about a specific entity
-node dist/admin-cli.js entity "John Smith" [zone]
-
-# Show relations for a specific entity
-node dist/admin-cli.js relations "John Smith" [zone]
-
-# List all memory zones
-node dist/admin-cli.js zones list
-
-# Add a new memory zone
-node dist/admin-cli.js zones add projectX "Project X knowledge zone"
-
-# Delete a memory zone
-node dist/admin-cli.js zones delete projectX [--yes]
-
-# Show statistics for a specific zone
-node dist/admin-cli.js zones stats projectX
-
-# Reset all zones or a specific zone
-node dist/admin-cli.js reset [zone] [--yes]
-
-# Show help
-node dist/admin-cli.js help
+# Back up your entire memory system
+node dist/admin-cli.js backup memory-backup.json
 ```
 
-## Memory Zones
+## 📚 Advanced Features
 
-The knowledge graph supports multiple memory zones to organize domain-specific knowledge. This allows you to:
+### Memory Zones
 
-1. **Partition Knowledge**: Separate data into different domains (projects, departments, etc.)
-2. **Improve Query Performance**: Search within specific zones for faster and more relevant results
-3. **Maintain Context**: Keep context-specific information isolated but connected
-
-### Working with Zones
+Organize knowledge into separate domains:
 
 ```bash
-# Create a new zone
-node dist/admin-cli.js zones add projectX "Project X knowledge zone"
+# Create a project-specific memory zone
+node dist/admin-cli.js zones add client-acme "ACME Corp Project Knowledge"
 
-# List all zones
-node dist/admin-cli.js zones list
-
-# Import data into a specific zone
-node dist/admin-cli.js import project-data.json projectX
-
-# Search within a specific zone
-node dist/admin-cli.js search "feature" projectX
+# Import data into that zone
+node dist/admin-cli.js import acme-data.json client-acme
 ```
 
-### Cross-Zone Relations
+### Search Capabilities
 
-Entities in different zones can be related to each other. When creating a relation, you can specify the zones for both entities:
-
-```json
-{
-  "type": "relation",
-  "from": "Project Feature",
-  "fromZone": "projectX",
-  "to": "General Concept",
-  "toZone": "default",
-  "relationType": "implements"
-}
-```
-
-### Automation Support
-
-For scripting and automation, you can use the `--yes` or `-y` flag to skip confirmation prompts:
+Leverage Elasticsearch's powerful search features:
 
 ```bash
-# Reset without confirmation
-node dist/admin-cli.js reset --yes
+# Fuzzy search (finds "meeting" even with typo)
+node dist/admin-cli.js search "meteing notes"
 
-# Delete a zone without confirmation
-node dist/admin-cli.js zones delete projectX --yes
-
-# Restore from backup without confirmation
-node dist/admin-cli.js restore backup.json --yes
+# Zone-specific search
+node dist/admin-cli.js search "budget" client-acme
 ```
 
-### Search Examples
+## 🤝 Contributing
 
-The Elasticsearch-backed knowledge graph provides powerful search capabilities:
+Contributions are welcome! See [CONTRIBUTING.md](CONTRIBUTING.md) for details.
 
-```bash
-# Basic search
-node dist/admin-cli.js search "cordova plugin"
-
-# Search in a specific zone
-node dist/admin-cli.js search "feature" projectX
-
-# Fuzzy search (will find "subscription" even with typo)
-node dist/admin-cli.js search "subscrption"
-
-# Person search
-node dist/admin-cli.js search "Jean"
-```
-
-Search results include:
-- Relevancy scoring
-- Highlighted matches showing where the terms were found
-- Entity types and observation counts
-- Sorted by most relevant first
-
-## MCP Server Tools
-
-The MCP server exposes the following tools for interacting with the knowledge graph:
-
-### Entity Operations
-
-| Tool | Description |
-|------|-------------|
-| `create_entities` | Create one or more entities in the knowledge graph |
-| `update_entities` | Update properties of existing entities |
-| `delete_entities` | Delete one or more entities from the knowledge graph |
-| `add_observations` | Add observations to an existing entity |
-| `mark_important` | Mark an entity as important or not |
-
-### Relation Operations
-
-| Tool | Description |
-|------|-------------|
-| `create_relations` | Create relations between entities |
-| `delete_relations` | Delete relations between entities |
-
-### Query Operations
-
-| Tool | Description |
-|------|-------------|
-| `search_nodes` | Search for entities using Elasticsearch query capabilities |
-| `open_nodes` | Get details about specific entities by name |
-| `get_recent` | Get recently accessed entities |
-
-Each tool can include an optional `memory_zone` parameter to specify which zone to operate on.
-
-## Relevancy Ranking
-
-The knowledge graph implements a sophisticated relevancy ranking system that considers:
-
-1. **Text Relevance**: How well entities match the search query
-2. **Recency**: Prioritizes recently accessed entities
-3. **Importance**: Entities marked as important receive higher ranking
-4. **Usage Frequency**: Entities accessed more frequently rank higher
-
-This approach simulates memory-like behavior where important, recent, and frequently accessed information is prioritized.
-
-## Benefits Over JSON Implementation
-
-- **Scalability**: Handles millions of entities efficiently
-- **Performance**: Optimized for fast queries even with large datasets
-- **Rich Queries**: Advanced search capabilities like fuzzy matching and relevancy ranking
-- **Resiliency**: Better handling of concurrent operations
-- **Observability**: Built-in monitoring and diagnostics
-- **Complete CRUD**: Full lifecycle management for entities and relations
-
-## License
+## 📝 License
 
 MIT
+
+---
+
+<p align="center">
+  <b>Ready to give your AI a memory that lasts? Get started in 5 minutes!</b><br>
+  <a href="https://github.com/mcp-servers/mcp-servers">GitHub</a> •
+  <a href="https://discord.gg/mcp-community">Discord</a> •
+  <a href="https://mcp-servers.readthedocs.io">Documentation</a>
+</p>
