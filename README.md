@@ -38,6 +38,12 @@ MCP Memory solves these problems by creating a structured, searchable memory sto
 
 Getting started is incredibly simple:
 
+### Prerequisites
+
+- **Docker**: Required for running Elasticsearch (or a local Elasticsearch installation)
+- **Node.js**: Version 18 or higher
+- **npm**: For package management
+
 ```bash
 # 1. Clone the repository
 git clone https://github.com/mcp-servers/mcp-servers.git
@@ -48,6 +54,8 @@ npm install
 
 # 3. Start Elasticsearch (uses Docker)
 npm run es:start
+# Note: If you prefer to use your own Elasticsearch installation,
+# set the ES_NODE environment variable to point to your Elasticsearch instance
 
 # 4. Build the project
 npm run build
@@ -121,75 +129,52 @@ When integrated with an LLM, the system automatically:
 - Builds connections between related concepts
 - Forgets unimportant details while preserving critical knowledge
 
-## 🛠️ Usage Examples
+## 🛠️ Example: How Agents Use Memory
 
-### Remembering User Preferences
+### From the User's Perspective
 
-```javascript
-// Store a user preference
-await memoryClient.createEntities({
-  entities: [{
-    name: "Jane Smith",
-    entityType: "Person",
-    observations: ["Prefers dark mode", "Lives in Boston"]
-  }]
-});
+**Conversation 1: Initial Information**
 
-// Later, retrieve those preferences
-const results = await memoryClient.searchNodes({
-  query: "Jane Smith preferences",
-  informationNeeds: "What UI preferences does Jane have?"
-});
+```
+User: My daughter's name is Emma and she's turning 8 next month.
+
+Claude: That's wonderful! Emma will be turning 8 next month. Is there anything special you're planning for her birthday?
+(Behind the scenes: Claude stores "Emma" as an entity of type "Person" with observations about her age and birthday timing)
 ```
 
-### Project Context
+**Conversation 2: Days or Weeks Later**
 
-```javascript
-// Store project information
-await memoryClient.createEntities({
-  entities: [{
-    name: "Project Apollo",
-    entityType: "Project",
-    observations: ["Started on May 15, 2023", "Deadline is December 1, 2023"]
-  }]
-});
+```
+User: I'm thinking about what to get for a gift.
 
-// Connect team members to project
-await memoryClient.createRelations({
-  relations: [
-    { from: "Jane Smith", to: "Project Apollo", type: "works on" }
-  ]
-});
+Claude: If you're looking for gift ideas for Emma's 8th birthday coming up, have you considered what her current interests are? At that age, many children enjoy creative items, books, or educational games.
+(Behind the scenes: Claude retrieved the entity "Emma", her age, and the fact that her birthday is approaching)
 ```
 
-### Adding New Observations
+**Conversation 3: After the Birthday**
 
-```javascript
-// Add new learnings about an entity
-await memoryClient.addObservations({
-  name: "Project Apollo",
-  observations: ["Budget increased to $250K on July 3"]
-});
+```
+User: The party went really well on Saturday!
+
+Claude: I'm glad Emma's 8th birthday party was a success on Saturday! Did she enjoy the gifts she received?
+(Behind the scenes: Claude updates the observations about Emma, noting that her birthday party occurred on a Saturday and went well)
 ```
 
-## 🔎 Real-World Applications
+### How the Agent Uses Memory
 
-- **Customer Support**: Remember details about customers and their past issues
-- **Project Management**: Maintain context about projects, decisions, and discussions
-- **Personal Assistants**: Build a personalized memory of user preferences and history
-- **Education**: Remember student progress and learning patterns
-- **Research**: Maintain knowledge graphs of complex research domains
+When the user mentions something important, the agent:
 
-## 📊 Memory vs. Traditional Approaches
+1. **Recognizes important information** worth remembering
+2. **Stores it in memory** by creating entities, relations, and observations
+3. **Updates existing information** when new details emerge
 
-| Feature | MCP Memory | Conversation History | Vector Databases | Traditional Databases |
-|---------|------------|---------------------|------------------|------------------------|
-| Persistence across sessions | ✅ | ❌ | ✅ | ✅ |
-| Relationships between concepts | ✅ | ❌ | ⚠️ Limited | ⚠️ Limited |
-| Automatic relevance ranking | ✅ | ❌ | ✅ | ❌ |
-| Query flexibility | ✅ | ❌ | ⚠️ Limited | ✅ |
-| Scalability | ✅ | ❌ | ✅ | ✅ |
-| Memory organization | ✅ | ❌ | ⚠️ Limited | ⚠️ Limited |
+When the user mentions something related to stored information, the agent:
+
+1. **Searches memory** for relevant context based on the current conversation
+2. **Retrieves important details** that might be helpful
+3. **Incorporates this information** naturally into its responses
+
+This happens automatically - the user simply has a normal conversation with the assistant, and the memory system works behind the scenes to maintain context across sessions.
 
 ## 🧰 Admin Tools
 
@@ -197,10 +182,10 @@ MCP Memory includes a comprehensive admin CLI for maintaining your knowledge gra
 
 ```bash
 # Search the memory
-node dist/admin-cli.js search "project deadline"
+node dist/admin-cli.js search "Emma birthday"
 
 # View details about a specific entity
-node dist/admin-cli.js entity "Jane Smith"
+node dist/admin-cli.js entity "Emma"
 
 # Back up your entire memory system
 node dist/admin-cli.js backup memory-backup.json
