@@ -617,13 +617,26 @@ async function startServer() {
       // If there are conflicts or invalid entities, reject the operation
       if (conflictingEntities.length > 0 || invalidEntities.length > 0) {
         const zoneMsg = zone ? ` in zone "${zone}"` : "";
+        
+        // Fetch existing entity details if there are conflicts
+        const existingEntitiesData = [];
+        if (conflictingEntities.length > 0) {
+          for (const entityName of conflictingEntities) {
+            const existingEntity = await kgClient.getEntity(entityName, zone);
+            if (existingEntity) {
+              existingEntitiesData.push(existingEntity);
+            }
+          }
+        }
+        
         return formatResponse({
           success: false,
-          error: `Entity creation failed${zoneMsg}`,
+          error: `Entity creation failed${zoneMsg}, no entities were created.`,
           conflicts: conflictingEntities.length > 0 ? conflictingEntities : undefined,
+          existingEntities: existingEntitiesData.length > 0 ? existingEntitiesData : undefined,
           invalidEntities: invalidEntities.length > 0 ? invalidEntities : undefined,
           message: conflictingEntities.length > 0 ? 
-            "Please use update_entities for modifying existing entities." : 
+            "Feel free to extend existing entities with more information if needed, or create entities with different names. Use update_entities to modify existing entities." : 
             "Please provide valid entity names for all entities."
         });
       }

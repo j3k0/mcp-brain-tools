@@ -163,6 +163,14 @@ When the user mentions something related to stored information, the agent:
 
 This happens automatically - the user simply has a normal conversation with the assistant, and the memory system works behind the scenes to maintain context across sessions.
 
+### Intelligent Entity Management
+
+MCP Memory includes smart handling of entity creation and updates:
+
+- When attempting to create an entity that already exists, the system returns the existing entity data with guidance on how to extend it with new information
+- The system intelligently differentiates between creating new entities and updating existing ones
+- Entity relationships are automatically maintained even when information is updated
+
 ## 🧰 Admin Tools
 
 MCP Memory includes a comprehensive admin CLI for maintaining your knowledge graph:
