@@ -51,12 +51,60 @@ npm run es:start
 
 # 4. Build the project
 npm run build
-
-# 5. Start the MCP server
-npm start
 ```
 
-That's it! Your AI now has a persistent memory system.
+### 🔌 Connecting to Claude Desktop
+
+MCP Memory is designed to work seamlessly with Claude Desktop, giving Claude persistent memory across all your conversations:
+
+1. **Create and configure the launch script**:
+   
+   If `launch.example` doesn't exist, create a new file called `launch.sh` with the following content:
+   
+   ```bash
+   #!/bin/bash
+   set -e
+   
+   # Your Groq API Key (required for smart memory retrieval)
+   export GROQ_API_KEY=gsk_your_groq_api_key_here
+   
+   # Optional configuration
+   # export DEBUG=true
+   # export ES_NODE=http://localhost:9200
+   # export KG_DEFAULT_ZONE=default
+   
+   # Change to the script directory
+   cd "$(dirname "$0")"
+   
+   # Ensure Elasticsearch is running
+   docker ps | grep elasticsearch > /dev/null || npm run es:start
+   
+   # Start the MCP Memory server
+   node dist/index.js
+   ```
+   
+   Make the script executable:
+   ```bash
+   chmod +x launch.sh
+   ```
+
+2. **Add the command to Claude Desktop**:
+   - Open Claude Desktop Settings
+   - Navigate to the "Commands" section
+   - Click "Add New Command"
+   - Configure as follows:
+     - **Name**: MCP Memory
+     - **Command**: /path/to/mcp-servers/memory/launch.sh
+     - **Arguments**: Leave empty
+     - **Run in background**: Yes
+     - **Show in menu**: Yes
+
+3. **Verify connection**:
+   - Start the command from Claude Desktop
+   - You should see a notification that Claude is connected to MCP Memory
+   - Try asking Claude about something you discussed in a previous conversation!
+
+For complete examples and visual guides, see the [Claude Desktop MCP Server Setup Guide](https://github.com/anthropic-claude/claude-desktop-mcp-examples) online.
 
 ## 💡 How It Works
 
