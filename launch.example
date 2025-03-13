@@ -2,6 +2,7 @@
 set -e
 export GROQ_API_KEY=gsk_your_key
 cd "$(dirname "$0")"
+docker compose up -d elasticsearch
 test -e node_modules || npm install
 npm run build
 node dist/index.js "$@"
