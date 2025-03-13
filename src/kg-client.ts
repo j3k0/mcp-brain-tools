@@ -886,7 +886,7 @@ export class KnowledgeGraphClient {
             bool: {
               must: [
                 { term: { from: entity.name } },
-                { term: { fromZone: entityZone } }
+                { term: { "fromZone.keyword": entityZone } }
               ]
             }
           },
@@ -901,7 +901,7 @@ export class KnowledgeGraphClient {
             bool: {
               must: [
                 { term: { to: entity.name } },
-                { term: { toZone: entityZone } }
+                { term: { "toZone.keyword": entityZone } }
               ]
             }
           },
@@ -1278,7 +1278,7 @@ export class KnowledgeGraphClient {
       bool: {
         must: [
           { term: { from: name } },
-          { term: { fromZone: actualZone } }
+          { term: { "fromZone.keyword": actualZone } }
         ]
       }
     }));
@@ -1287,7 +1287,7 @@ export class KnowledgeGraphClient {
       bool: {
         must: [
           { term: { to: name } },
-          { term: { toZone: actualZone } }
+          { term: { "toZone.keyword": actualZone } }
         ]
       }
     }));
