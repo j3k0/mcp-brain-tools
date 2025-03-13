@@ -1,0 +1,7 @@
+#!/bin/bash
+set -e
+export GROQ_API_KEY=gsk_your_key
+cd "$(dirname "$0")"
+test -e node_modules || npm install
+npm run build
+node dist/index.js "$@"
