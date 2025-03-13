@@ -65,30 +65,17 @@ npm run build
 
 MCP Memory is designed to work seamlessly with Claude Desktop, giving Claude persistent memory across all your conversations:
 
-1. **Create and configure the launch script**:
+1. **Copy and configure the launch script**:
    
-   If `launch.example` doesn't exist, create a new file called `launch.sh` with the following content:
+   The repository includes a `launch.example` file that you can simply copy:
    
    ```bash
-   #!/bin/bash
-   set -e
+   # Copy the example launch file
+   cp launch.example launch.sh
    
-   # Your Groq API Key (required for smart memory retrieval)
-   export GROQ_API_KEY=gsk_your_groq_api_key_here
-   
-   # Optional configuration
-   # export DEBUG=true
-   # export ES_NODE=http://localhost:9200
-   # export KG_DEFAULT_ZONE=default
-   
-   # Change to the script directory
-   cd "$(dirname "$0")"
-   
-   # Ensure Elasticsearch is running
-   docker ps | grep elasticsearch > /dev/null || npm run es:start
-   
-   # Start the MCP Memory server
-   node dist/index.js
+   # Edit launch.sh to add your Groq API key
+   # This is required for smart memory retrieval
+   nano launch.sh  # or use your preferred editor
    ```
    
    Make the script executable:
