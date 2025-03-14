@@ -123,25 +123,37 @@ export const GroqAI = {
    * @param {Object[]} searchResults - Array of entity objects from search
    * @param {string} userInformationNeeds - Description of what the user is looking for
    * @param {string} [reason] - Reason for the search, providing additional context
-   * @returns {Promise<string[]>} Array of entity names that are relevant to the user's needs
+   * @returns {Promise<Record<string, number>>} Object mapping entity names to usefulness scores (0-100)
    * @throws {Error} If the API request fails
    */
   async filterSearchResults(searchResults, userInformationNeeds, reason) {
+
+    const ret = searchResults.reduce((acc, result) => {
+      acc[result.name] = 40;
+      return acc;
+    }, {});
+
     if (!userInformationNeeds || !searchResults || searchResults.length === 0) {
-      return searchResults.map(result => result.name);
+      return null; // Return null to tell the caller to use the original results
     }
 
     const status = this._checkStatus();
     
     if (status.isDisabled) {
-      // If AI service is disabled, return all results without filtering
-      logger.warn('AI service temporarily disabled, returning unfiltered results');
-      return searchResults.map(result => result.name);
+      // If AI service is disabled, return null
+      logger.warn('AI service temporarily disabled, returning null to use original results');
+      return null;
     }
 
     const systemPrompt = `You are an intelligent filter for a knowledge graph search. 
 Your task is to analyze search results and determine which entities are useful to the user's information needs.
-Return ONLY the names of useful entities as a JSON array of strings. Nothing else.`;
+Usefulness will be a score between 0 and 100:
+- < 10: definitely not useful
+- < 50: quite not useful
+- >= 50: useful
+- >= 90: extremely useful
+Do not include entities with a score between 10 and 50 in your response.
+Return a JSON object with the entity names as keys and their usefulness scores as values. Nothing else.`;
 
     let userPrompt = `Why am I searching: ${userInformationNeeds}`;
     
@@ -152,8 +164,8 @@ Return ONLY the names of useful entities as a JSON array of strings. Nothing els
     userPrompt += `\n\nHere are the search results to filter:
 ${JSON.stringify(searchResults, null, 2)}
 
-Return only the names of the entities that are relevant to my information needs as a JSON array of strings. 
-IMPORTANT: Your response will be directly passed to JSON.parse(). Do NOT use markdown formatting, code blocks, or any other formatting. Return ONLY a raw, valid JSON array.`;
+Return a JSON object mapping entity names to their usefulness scores (0-100).
+IMPORTANT: Your response will be directly passed to JSON.parse(). Do NOT use markdown formatting, code blocks, or any other formatting. Return ONLY a raw, valid JSON object.`;
 
     try {
       const response = await this.chatCompletion({
@@ -162,31 +174,57 @@ IMPORTANT: Your response will be directly passed to JSON.parse(). Do NOT use mar
       });
 
       // Handle the response based on its type
-      if (Array.isArray(response)) {
-        // If response is already an array, use it directly
-        return response;
+      if (typeof response === 'object' && !Array.isArray(response)) {
+        // If response is already an object, add entities with scores between 10 and 50,
+        // and include entities with scores >= 50
+        Object.entries(response).forEach(([name, score]) => {
+          if (typeof score === 'number') {
+            ret[name] = score;
+          }
+        });
+        
+        return ret;
       } else if (typeof response === 'string') {
         // If response is a string, try to parse it as JSON
         try {
           const parsedResponse = JSON.parse(response);
-          if (Array.isArray(parsedResponse)) {
-            return parsedResponse;
+          
+          if (typeof parsedResponse === 'object' && !Array.isArray(parsedResponse)) {
+            // If parsed response is an object, add entities with scores between 10 and 50,
+            // and include entities with scores >= 50
+            Object.entries(parsedResponse).forEach(([name, score]) => {
+              if (typeof score === 'number') {
+                ret[name] = score;
+              }
+            });
+            
+            return ret;
+          } else if (Array.isArray(parsedResponse)) {
+            // For backward compatibility: if response is an array of entity names,
+            // convert to object with maximum usefulness for each entity
+            logger.warn('Received array format instead of object with scores, returning null to use original results');
+            return null;
           } else {
-            logger.warn('Unexpected response format from AI, returning all results', { response });
-            return searchResults.map(result => result.name);
+            logger.warn('Unexpected response format from AI, returning null to use original results', { response });
+            return null;
           }
         } catch (error) {
-          logger.error('Error parsing AI response, returning all results', { error, response });
-          return searchResults.map(result => result.name);
+          logger.error('Error parsing AI response, returning null to use original results', { error, response });
+          return null;
         }
+      } else if (Array.isArray(response)) {
+        // For backward compatibility: if response is an array of entity names,
+        // convert to object with maximum usefulness for each entity
+        logger.warn('Received array format instead of object with scores, returning null to use original results');
+        return null;
       } else {
-        // For any other type of response, return all results
-        logger.warn('Unhandled response type from AI, returning all results', { responseType: typeof response });
-        return searchResults.map(result => result.name);
+        // For any other type of response, return null
+        logger.warn('Unhandled response type from AI, returning null to use original results', { responseType: typeof response });
+        return null;
       }
     } catch (error) {
-      logger.error('Error calling AI service, returning all results', { error });
-      return searchResults.map(result => result.name);
+      logger.error('Error calling AI service, returning null to use original results', { error });
+      return null;
     }
   },
 
@@ -227,6 +265,8 @@ IMPORTANT: Your response will be directly passed to JSON.parse(). Do NOT use mar
         })
       });
 
+      logger.info('Groq API response:', { status: response.status, statusText: response.statusText });
+
       if (!response.ok) {
         if (response.status === 429) { // Too Many Requests
           if (this._moveToNextModel()) {
@@ -244,6 +284,7 @@ IMPORTANT: Your response will be directly passed to JSON.parse(). Do NOT use mar
       
       // Only process if content is a string
       if (typeof content === 'string') {
+        logger.info('Groq API response content:', { content });
         if (content.includes('<think>')) {
           const thinkingTagRegex = /<think>[\s\S]*?<\/think>/g;
           cleanedContent = content.replace(thinkingTagRegex, '').trim();

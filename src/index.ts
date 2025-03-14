@@ -287,7 +287,7 @@ async function startServer() {
                 description: "Limit search to specific zone. Omit for default zone."
               },
             },
-            required: ["query", "informationNeeds"],
+            required: ["query", "informationNeeds", "reason"],
             additionalProperties: false,
             "$schema": "http://json-schema.org/draft-07/schema#"
           }

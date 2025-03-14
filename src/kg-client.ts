@@ -1762,11 +1762,33 @@ export class KnowledgeGraphClient {
       autoCreateMissingEntities?: boolean;
     }
   ): Promise<ESEntity> {
+    return this.updateEntityRelevanceScore(name, important ? 10 : 0.1, zone, options);
+  }
+
+  /**
+   * Mark an entity as important or not important
+   * @param name Entity name
+   * @param important Whether the entity is important
+   * @param zone Optional memory zone name, uses defaultZone if not specified
+   * @param options Optional configuration options
+   * @param options.autoCreateMissingEntities Whether to automatically create missing entities (default: false)
+   * @returns The updated entity
+   */
+  async updateEntityRelevanceScore(
+    name: string, 
+    ratio: number, 
+    zone?: string,
+    options?: {
+      autoCreateMissingEntities?: boolean;
+    }
+  ): Promise<ESEntity> {
     const actualZone = zone || this.defaultZone;
     
     // Default to false for auto-creation (different from saveRelation)
     const autoCreateMissingEntities = options?.autoCreateMissingEntities ?? false;
-    
+
+    // Get existing entity
+
     // Get existing entity
     let entity = await this.getEntity(name, actualZone);
     
@@ -1789,9 +1811,9 @@ export class KnowledgeGraphClient {
     // If marking as important, multiply by 10
     // If removing importance, divide by 10
     const baseRelevanceScore = entity.relevanceScore || 1.0;
-    const newRelevanceScore = important 
-      ? Math.max(10, baseRelevanceScore * 10) // Minimum 10 when marking as important
-      : baseRelevanceScore / 10;
+    const newRelevanceScore = ratio > 1.0
+      ? Math.min(25, baseRelevanceScore * ratio)
+      : Math.max(0.01, baseRelevanceScore / ratio);
     
     // Update entity with new relevance score
     const updatedEntity = await this.saveEntity({
@@ -2386,16 +2408,45 @@ export class KnowledgeGraphClient {
     if (informationNeeds && GroqAI.isEnabled && entities.length > 0) {
       try {
         // Get relevant entity names using AI filtering
-        const relevantEntityNames = await GroqAI.filterSearchResults(entities, informationNeeds, reason);
+        const usefulness = await GroqAI.filterSearchResults(entities, informationNeeds, reason);
         
-        // Filter entities to only include those deemed relevant by the AI
-        filteredEntities = entities.filter(entity => 
-          relevantEntityNames.includes(entity.name)
-        );
-        
-        // If no entities were found relevant, fall back to the original results
-        if (filteredEntities.length === 0) {
+        // If AI filtering returned null (error case), use original entities
+        if (usefulness === null) {
+          console.warn('AI filtering returned null, using original results');
           filteredEntities = entities.slice(0, params.limit || defaultLimit);
+        } else {
+          // Filter entities to only include those with a usefulness score
+          filteredEntities = entities.filter(entity => 
+            usefulness[entity.name] !== undefined
+          );
+          
+          // Sort entities by their relevance score from highest to lowest
+          filteredEntities.sort((a, b) => {
+            const scoreA = usefulness[a.name] || 0;
+            const scoreB = usefulness[b.name] || 0;
+            return scoreB - scoreA;
+          });
+
+          const usefulEntities = filteredEntities.filter(entity => usefulness[entity.name] >= 60);
+          const definatelyNotUsefulEntities = filteredEntities.filter(entity => usefulness[entity.name] < 20);
+
+          // for each useful entities, increase the relevanceScore
+          for (const entity of usefulEntities) {
+            this.updateEntityRelevanceScore(entity.name, (usefulness[entity.name] + 45) * 0.01, zone);
+          }
+
+          // for each definately not useful entities, decrease the relevanceScore
+          for (const entity of definatelyNotUsefulEntities) {
+            this.updateEntityRelevanceScore(entity.name, 0.8 + usefulness[entity.name] * 0.01, zone);
+          }
+          
+          // If no entities were found relevant, fall back to the original results
+          if (filteredEntities.length === 0) {
+            filteredEntities = entities.slice(0, params.limit || defaultLimit);
+          } else {
+            // Limit the filtered results to the requested amount
+            filteredEntities = filteredEntities.slice(0, params.limit || defaultLimit);
+          }
         }
       } catch (error) {
         console.error('Error applying AI filtering:', error);
