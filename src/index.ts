@@ -105,8 +105,7 @@ async function startServer() {
                       type: "array", 
                       items: {type: "string"},
                       description: "Observations about this entity"
-                    },
-                    relevanceScore: {type: "number", description: "Relevance score (higher = more important)"}
+                    }
                   },
                   required: ["name", "entityType"]
                 },
@@ -648,7 +647,7 @@ async function startServer() {
           name: entity.name,
           entityType: entity.entityType,
           observations: entity.observations,
-          relevanceScore: entity.relevanceScore
+          relevanceScore: entity.relevanceScore ?? 1.0
         }, zone);
         
         createdEntities.push(savedEntity);
@@ -681,7 +680,7 @@ async function startServer() {
           name: entity.name,
           entityType: entity.entityType || existingEntity.entityType,
           observations: entity.observations || existingEntity.observations,
-          relevanceScore: entity.relevanceScore || existingEntity.relevanceScore
+          relevanceScore: entity.relevanceScore || ((existingEntity.relevanceScore ?? 1.0) * 2.0)
         }, zone);
         
         updatedEntities.push(updatedEntity);
