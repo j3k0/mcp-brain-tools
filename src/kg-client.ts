@@ -796,7 +796,7 @@ export class KnowledgeGraphClient {
       sort = [{ lastRead: { order: 'desc' } }];
     } else if (params.sortBy === 'importance') {
       sort = [
-        { isImportant: { order: 'desc' } },
+        // Always sort by relevanceScore in descending order (highest first)
         { relevanceScore: { order: 'desc' } }
       ];
     } else {
@@ -1813,7 +1813,7 @@ export class KnowledgeGraphClient {
     const baseRelevanceScore = entity.relevanceScore || 1.0;
     const newRelevanceScore = ratio > 1.0
       ? Math.min(25, baseRelevanceScore * ratio)
-      : Math.max(0.01, baseRelevanceScore / ratio);
+      : Math.max(0.01, baseRelevanceScore * ratio);
     
     // Update entity with new relevance score
     const updatedEntity = await this.saveEntity({

@@ -164,7 +164,7 @@ Return a JSON object with the entity names as keys and their usefulness scores a
     userPrompt += `\n\nHere are the search results to filter:
 ${JSON.stringify(searchResults, null, 2)}
 
-Return a JSON object mapping entity names to their usefulness scores (0-100).
+Return a JSON object mapping entity names to their usefulness scores (0-100). Do not omit any entities.
 IMPORTANT: Your response will be directly passed to JSON.parse(). Do NOT use markdown formatting, code blocks, or any other formatting. Return ONLY a raw, valid JSON object.`;
 
     try {
