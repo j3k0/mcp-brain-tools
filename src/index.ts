@@ -113,10 +113,10 @@ async function startServer() {
               },
               memory_zone: {
                 type: "string",
-                description: "Optional memory zone to create entities in. If not specified, uses the default zone."
+                description: "Memory zone to create entities in."
               }
             },
-            required: ["entities"],
+            required: ["entities", "memory_zone"],
             additionalProperties: false,
             "$schema": "http://json-schema.org/draft-07/schema#"
           }
@@ -146,10 +146,10 @@ async function startServer() {
               },
               memory_zone: {
                 type: "string",
-                description: "Optional memory zone specifier. If provided, entities will be updated in this zone."
+                description: "Memory zone specifier. Entities will be updated in this zone."
               }
             },
-            required: ["entities"],
+            required: ["entities", "memory_zone"],
             additionalProperties: false,
             "$schema": "http://json-schema.org/draft-07/schema#"
           }
@@ -167,7 +167,7 @@ async function startServer() {
               },
               memory_zone: {
                 type: "string",
-                description: "Optional memory zone specifier. If provided, entities will be deleted from this zone."
+                description: "Memory zone specifier. Entities will be deleted from this zone."
               },
               cascade_relations: {
                 type: "boolean",
@@ -175,7 +175,7 @@ async function startServer() {
                 default: true
               }
             },
-            required: ["names"],
+            required: ["names", "memory_zone"],
             additionalProperties: false,
             "$schema": "http://json-schema.org/draft-07/schema#"
           }
