@@ -2,6 +2,16 @@
 
 import logger from './logger.js';
 
+// Add Node.js process type definition
+declare const process: {
+  env: {
+    [key: string]: string | undefined;
+    GROQ_API_KEY?: string;
+    GROQ_MODELS?: string;
+    DEBUG_AI?: string;
+  };
+};
+
 /**
  * Configuration for Groq API
  * @constant {Object}
@@ -121,19 +131,19 @@ export const GroqAI = {
   /**
    * Filters search results using AI to determine which entities are relevant to the user's information needs
    * @param {Object[]} searchResults - Array of entity objects from search
-   * @param {string} userInformationNeeds - Description of what the user is looking for
+   * @param {string} userinformationNeeded - Description of what the user is looking for
    * @param {string} [reason] - Reason for the search, providing additional context
    * @returns {Promise<Record<string, number>>} Object mapping entity names to usefulness scores (0-100)
    * @throws {Error} If the API request fails
    */
-  async filterSearchResults(searchResults, userInformationNeeds, reason) {
+  async filterSearchResults(searchResults, userinformationNeeded, reason) {
 
     const ret = searchResults.reduce((acc, result) => {
       acc[result.name] = 40;
       return acc;
     }, {});
 
-    if (!userInformationNeeds || !searchResults || searchResults.length === 0) {
+    if (!userinformationNeeded || !searchResults || searchResults.length === 0) {
       return null; // Return null to tell the caller to use the original results
     }
 
@@ -155,7 +165,7 @@ Usefulness will be a score between 0 and 100:
 Do not include entities with a score between 10 and 50 in your response.
 Return a JSON object with the entity names as keys and their usefulness scores as values. Nothing else.`;
 
-    let userPrompt = `Why am I searching: ${userInformationNeeds}`;
+    let userPrompt = `Why am I searching: ${userinformationNeeded}`;
     
     if (reason) {
       userPrompt += `\nReason for search: ${reason}`;
@@ -224,6 +234,52 @@ IMPORTANT: Your response will be directly passed to JSON.parse(). Do NOT use mar
       }
     } catch (error) {
       logger.error('Error calling AI service, returning null to use original results', { error });
+      return null;
+    }
+  },
+
+  /**
+   * Helper function to safely parse JSON with multiple attempts
+   * @private
+   * @param {string} jsonString - The JSON string to parse
+   * @returns {Object|null} Parsed object or null if parsing fails
+   */
+  _safeJsonParse(jsonString) {
+    // First attempt: direct parsing
+    try {
+      return JSON.parse(jsonString);
+    } catch (error) {
+      if (process.env.DEBUG_AI === 'true') {
+        logger.debug('First JSON parse attempt failed, trying to clean the string', { error: error.message });
+      }
+      
+      // Second attempt: try to extract JSON from markdown code blocks
+      try {
+        const matches = jsonString.match(/```(?:json)?\s*([\s\S]*?)```/);
+        if (matches && matches[1]) {
+          const extracted = matches[1].trim();
+          return JSON.parse(extracted);
+        }
+      } catch (error) {
+        if (process.env.DEBUG_AI === 'true') {
+          logger.debug('Second JSON parse attempt failed', { error: error.message });
+        }
+      }
+      
+      // Third attempt: try to find anything that looks like a JSON object
+      try {
+        const jsonRegex = /{[^]*}/;
+        const matches = jsonString.match(jsonRegex);
+        if (matches && matches[0]) {
+          return JSON.parse(matches[0]);
+        }
+      } catch (error) {
+        if (process.env.DEBUG_AI === 'true') {
+          logger.debug('Third JSON parse attempt failed', { error: error.message });
+        }
+      }
+      
+      // All attempts failed
       return null;
     }
   },
@@ -303,6 +359,15 @@ IMPORTANT: Your response will be directly passed to JSON.parse(). Do NOT use mar
             return parsed;
           }
         } catch (error) {
+          // Try additional parsing strategies
+          const parsed = this._safeJsonParse(cleanedContent);
+          if (parsed) {
+            if (process.env.DEBUG_AI === 'true') {
+              logger.debug('Recovered JSON using safe parsing method');
+            }
+            return parsed;
+          }
+          
           // If parsing fails, return cleaned string content
           if (process.env.DEBUG_AI === 'true') {
             logger.debug('Failed to parse response as JSON:', error.message);
@@ -419,7 +484,7 @@ Return a JSON object mapping each zone name to its usefulness score (0-2):
    * @param {string} [userPrompt] - Optional user-provided description of the zone's purpose
    * @returns {Promise<{description: string, shortDescription: string}>} Generated descriptions
    */
-  async generateZoneDescriptions(zoneName, currentDescription, relevantEntities, userPrompt) {
+  async generateZoneDescriptions(zoneName, currentDescription, relevantEntities, userPrompt): Promise<{description: string, shortDescription: string}> {
     if (!relevantEntities || relevantEntities.length === 0) {
       return {
         description: currentDescription || `Zone: ${zoneName}`,
@@ -494,30 +559,10 @@ Return your response as a raw, valid JSON object with "description" and "shortDe
         
         // If the response is a string, try to parse it
         if (typeof response === 'string') {
-          // First, try to clean up the response if it contains markdown formatting
-          let cleanedResponse = response;
+          // Try to parse with enhanced parsing function
+          const parsedResponse = this._safeJsonParse(response);
           
-          // Remove markdown code blocks if present
-          if (response.includes('```')) {
-            // Extract the content between the first and last ```
-            const matches = response.match(/```(?:json)?\s*([\s\S]*?)```/);
-            if (matches && matches[1]) {
-              cleanedResponse = matches[1].trim();
-            }
-          }
-          
-          // Remove any additional markdown or whitespace
-          cleanedResponse = cleanedResponse.trim();
-          
-          // Log the cleaned response for debugging purposes
-          if (process.env.DEBUG_AI === 'true') {
-            logger.debug('Cleaned AI response:', cleanedResponse);
-          }
-          
-          // Try to parse the cleaned response
-          const parsedResponse = JSON.parse(cleanedResponse);
-          
-          if (typeof parsedResponse === 'object' && 
+          if (parsedResponse && 
               typeof parsedResponse.description === 'string' && 
               typeof parsedResponse.shortDescription === 'string') {
             return {
@@ -545,6 +590,95 @@ Return your response as a raw, valid JSON object with "description" and "shortDe
       return {
         description: currentDescription || `Zone: ${zoneName}`,
         shortDescription: currentDescription || zoneName
+      };
+    }
+  },
+
+  /**
+   * Analyzes file content and returns lines relevant to the user's information needs
+   * @param {Array<{lineNumber: number, content: string}>} fileLines - Array of line objects with line numbers and content
+   * @param {string} informationNeeded - Description of what information is needed from the file
+   * @param {string} [reason] - Additional context about why this information is needed
+   * @returns {Promise<Array<{lineNumber: number, content: string, relevance: number}>>} Array of relevant lines with their relevance scores
+   * @throws {Error} If the API request fails
+   */
+  async filterFileContent(fileLines, informationNeeded, reason): Promise<{lineRanges: string[], tentativeAnswer?: string}> {
+    if (!informationNeeded || !fileLines || fileLines.length === 0) {
+      return {
+        lineRanges: [`1-${fileLines.length}`],
+        tentativeAnswer: "No information needed, returning all lines"
+      };
+    }
+
+    const status = this._checkStatus();
+    
+    if (status.isDisabled) {
+      logger.warn('AI service temporarily disabled, returning all lines');
+      return {
+        lineRanges: [`1-${fileLines.length}`],
+        tentativeAnswer: "Groq AI service is temporarily disabled. Please try again later."
+      };
+    }
+
+    const systemPrompt = `You are an intelligent file content analyzer.
+Your task is to analyze file contents and determine which lines are relevant to the user's information needs.
+The response should be a raw JSON object like: {"lineRanges": ["1-10", "20-40", ...], "tentativeAnswer": "Answer to the information needed, if possible."}`;
+
+    let userPrompt = `Information needed: ${informationNeeded}`;
+    
+    if (reason) {
+      userPrompt += `\nContext/Reason: ${reason}`;
+    }
+
+    userPrompt += `\n\nHere are the file contents to analyze (<line number>:<content>):
+${fileLines.map(line => `${line.lineNumber}:${line.content}`).join('\n')}
+
+Return a JSON object with: {
+    "temptativeAnswer": "Answer to the information needed, if possible. Make it detailed, but without useless details. It must be straight to the point, using as little words as posssible without losing information.",
+    "lineRanges": ["1-10", "20-40", ...]
+}
+IMPORTANT: Your response must be a raw JSON object that can be parsed with JSON.parse().`;
+
+    try {
+      const response = await this.chatCompletion({
+        system: systemPrompt,
+        user: userPrompt
+      });
+
+      let result: {lineRanges: string[], tentativeAnswer?: string};
+      if (typeof response === 'object' && !Array.isArray(response)) {
+        result = response;
+        if (!result.lineRanges || !Array.isArray(result.lineRanges)) {
+          result.lineRanges = [];
+        }
+      } else if (typeof response === 'string') {
+        // Try to parse with enhanced parsing function
+        const parsedResponse = this._safeJsonParse(response);
+        
+        if (parsedResponse) {
+          result = parsedResponse;
+          if (!result.lineRanges || !Array.isArray(result.lineRanges)) {
+            result.lineRanges = [];
+          }
+        } else {
+          logger.error('Error parsing AI response, returning all lines', { response });
+          return {
+            lineRanges: [`1-${fileLines.length}`],
+            tentativeAnswer: "Error parsing AI response, returning all lines"
+          };
+        }
+      }
+
+      // Filter and format the results
+      return {
+        lineRanges: result.lineRanges,
+        tentativeAnswer: result.tentativeAnswer || "No answers given by AI"
+      }
+    } catch (error) {
+      logger.error('Error calling AI service, returning all lines', { error });
+      return {
+        lineRanges: [`1-${fileLines.length}`],
+        tentativeAnswer: "Error calling AI service, returning all lines"
       };
     }
   },

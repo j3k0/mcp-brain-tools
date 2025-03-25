@@ -13,6 +13,7 @@ import {
 import { KnowledgeGraphClient } from './kg-client.js';
 import { ESEntity, ESRelation, ESSearchParams } from './es-types.js';
 import GroqAI from './ai-service.js';
+import { inspectFile } from './filesystem/index.js';
 
 // Environment configuration for Elasticsearch
 const ES_NODE = process.env.ES_NODE || 'http://localhost:9200';
@@ -88,6 +89,35 @@ async function startServer() {
   server.setRequestHandler(ListToolsRequestSchema, async () => {
     return {
       tools: [
+        {
+          name: "inspect_files",
+          description: "Agent driven file inspection that uses AI to retrieve relevant content from multiple files.",
+          inputSchema: {
+            type: "object",
+            properties: {
+              file_paths: {
+                type: "array",
+                items: { type: "string" },
+                description: "Paths to the files to inspect"
+              },
+              information_needed: {
+                type: "string",
+                description: "Full description of what information is needed from the files, including the context of the information needed. Do not be vague, be specific. The AI agent does not have access to your context, only this \"information needed\" and \"reason\" fields. That's all it will use to decide that a line is relevant to the information needed. So provide a detailed specific description, listing all the details about what you are looking for."
+              },
+              reason: {
+                type: "string",
+                description: "Explain why this information is needed to help the AI agent give better results. The more context you provide, the better the results will be."
+              },
+              include_lines: {
+                type: "boolean",
+                description: "Whether to include the actual line content in the response, which uses more of your limited token quota, but gives more informatiom (default: false)"
+              }
+            },
+            required: ["file_paths", "information_needed", "include_lines"],
+            additionalProperties: false,
+            "$schema": "http://json-schema.org/draft-07/schema#"
+          }
+        },
         {
           name: "create_entities",
           description: "Create entities in knowledge graph (memory)",
@@ -255,13 +285,13 @@ async function startServer() {
                 type: "string",
                 description: "ElasticSearch query string."
               },
-              informationNeeds: {
+              informationNeeded: {
                 type: "string",
                 description: "Important. Describe what information you are looking for, to give a precise context to the search engine AI agent. What questions are you trying to answer? Helps get more useful results."
               },
               reason: {
                 type: "string",
-                description: "Reason for searching. What are you looking for? Why are you looking for it? Helps get more useful results."
+                description: "Explain why this information is needed to help the AI agent give better results. The more context you provide, the better the results will be."
               },
               entityTypes: {
                 type: "array",
@@ -287,7 +317,7 @@ async function startServer() {
                 description: "Limit search to specific zone. Omit for default zone."
               },
             },
-            required: ["query", "informationNeeds", "reason"],
+            required: ["query", "memory_zone", "informationNeeded", "reason"],
             additionalProperties: false,
             "$schema": "http://json-schema.org/draft-07/schema#"
           }
@@ -308,7 +338,7 @@ async function startServer() {
                 description: "Optional memory zone to retrieve entities from. If not specified, uses the default zone."
               }
             },
-            required: ["names"],
+            required: ["names", "memory_zone"],
             additionalProperties: false,
             "$schema": "http://json-schema.org/draft-07/schema#"
           }
@@ -333,7 +363,7 @@ async function startServer() {
                 description: "Optional memory zone where the entity is stored. If not specified, uses the default zone."
               }
             },
-            required: ["name", "observations"],
+            required: ["memory_zone", "name", "observations"],
             additionalProperties: false,
             "$schema": "http://json-schema.org/draft-07/schema#"
           }
@@ -362,7 +392,7 @@ async function startServer() {
                 default: false
               }
             },
-            required: ["name", "important"],
+            required: ["memory_zone", "name", "important"],
             additionalProperties: false,
             "$schema": "http://json-schema.org/draft-07/schema#"
           }
@@ -387,6 +417,7 @@ async function startServer() {
                 description: "Optional memory zone to get recent entities from. If not specified, uses the default zone."
               }
             },
+            required: ["memory_zone"],
             additionalProperties: false,
             "$schema": "http://json-schema.org/draft-07/schema#"
           }
@@ -553,7 +584,8 @@ async function startServer() {
                 type: "string",
                 description: "Zone name (omit for default zone)"
               }
-            }
+            },
+            required: ["zone"]
           }
         }
       ]
@@ -568,16 +600,14 @@ async function startServer() {
     }
     
     const toolName = request.params.name;
-    // When using inputSchema, client sends parameters in 'arguments' not 'parameters'
-    const params = request.params.arguments as any; // Type assertion to handle the unknown parameters
+    const params = request.params.arguments as any;
     
     if (DEBUG) {
       console.error('Parsed parameters:', JSON.stringify(params));
     }
-    
+
     // Helper function to format response for Claude
     const formatResponse = (data: any) => {
-      // Convert result to string for text field
       const stringifiedData = JSON.stringify(data, null, 2);
       return {
         content: [
@@ -588,8 +618,33 @@ async function startServer() {
         ],
       };
     };
-    
-    if (toolName === "create_entities") {
+
+    if (toolName === "inspect_files") {
+      const { file_paths, information_needed, reason, include_lines } = params;
+      const results = [];
+
+      for (const filePath of file_paths) {
+        try {
+          const fileResults = await inspectFile(filePath, information_needed, reason);
+          results.push({
+            filePath,
+            lines: include_lines ? fileResults.lines.map(line => `${line.lineNumber}:${line.content}`) : [],
+            tentativeAnswer: fileResults.tentativeAnswer
+          });
+        } catch (error) {
+          results.push({
+            filePath,
+            error: error.message
+          });
+        }
+      }
+      
+      return formatResponse({
+        success: true,
+        results
+      });
+    }
+    else if (toolName === "create_entities") {
       const entities = params.entities;
       const zone = params.memory_zone;
       
@@ -828,7 +883,7 @@ async function startServer() {
         sortBy: params.sortBy,
         includeObservations,
         zone,
-        informationNeeds: params.informationNeeds,
+        informationNeeded: params.informationNeeded,
         reason: params.reason
       });
       

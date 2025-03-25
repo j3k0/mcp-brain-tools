@@ -105,7 +105,7 @@ async function testSortByImportance() {
     query: '*',
     sortBy: 'importance',
     zone: TEST_ZONE,
-    // Important: don't include informationNeeds to avoid triggering AI filtering
+    // Important: don't include informationNeeded to avoid triggering AI filtering
   });
   
   // Verify order

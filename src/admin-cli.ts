@@ -689,7 +689,7 @@ async function updateZoneDescriptions(zone: string, limit: number = 20, userProm
         limit: limit,
         sortBy: 'importance', 
         includeObservations: true,
-        informationNeeds: zone !== 'default' ? `What is ${zone}?` : undefined,
+        informationNeeded: zone !== 'default' ? `What is ${zone}?` : undefined,
         reason: `Trying to figure out what ${zone} is about, in order to update the zone description.`,
         zone: zone
       });
@@ -704,7 +704,7 @@ async function updateZoneDescriptions(zone: string, limit: number = 20, userProm
         limit: Math.floor(limit / 2),
         sortBy: 'importance',
         includeObservations: true,
-        informationNeeds: zone !== 'default' ? `What is ${zone}?` : undefined,
+        informationNeeded: zone !== 'default' ? `What is ${zone}?` : undefined,
         reason: `Trying to figure out what ${zone} is about, in order to update the zone description.`,
         zone: zone
       });
@@ -728,7 +728,7 @@ async function updateZoneDescriptions(zone: string, limit: number = 20, userProm
         limit: Math.ceil(limit / 4),
         sortBy: 'relevance',
         includeObservations: true,
-        informationNeeds: zone !== 'default' ? `What is ${zone}?` : undefined,
+        informationNeeded: zone !== 'default' ? `What is ${zone}?` : undefined,
         reason: `Trying to figure out what ${zone} is about, in order to update the zone description.`,
         zone: zone
       });
@@ -752,7 +752,7 @@ async function updateZoneDescriptions(zone: string, limit: number = 20, userProm
         limit: Math.ceil(limit / 4),
         sortBy: 'recent',
         includeObservations: true,
-        informationNeeds: zone !== 'default' ? `What is ${zone}?` : undefined,
+        informationNeeded: zone !== 'default' ? `What is ${zone}?` : undefined,
         reason: `Trying to figure out what ${zone} is about, in order to update the zone description.`,
         zone: zone
       });

@@ -2323,7 +2323,7 @@ export class KnowledgeGraphClient {
    * This method acts as a wrapper around the raw search, with additional processing and AI filtering
    * 
    * @param params Search parameters including query, filters, and AI-related fields
-   * @returns Clean entity and relation data, filtered by AI if informationNeeds is provided
+   * @returns Clean entity and relation data, filtered by AI if informationNeeded is provided
    */
   async userSearch(params: {
     query: string;
@@ -2332,7 +2332,7 @@ export class KnowledgeGraphClient {
     includeObservations?: boolean;
     sortBy?: 'relevance' | 'recent' | 'importance';
     zone?: string;
-    informationNeeds?: string;
+    informationNeeded?: string;
     reason?: string;
   }): Promise<{
     entities: Array<{
@@ -2354,12 +2354,12 @@ export class KnowledgeGraphClient {
     const includeObservations = params.includeObservations ?? false;
     const defaultLimit = includeObservations ? 5 : 20;
     const zone = params.zone || this.defaultZone;
-    const informationNeeds = params.informationNeeds;
+    const informationNeeded = params.informationNeeded;
     const reason = params.reason;
     
-    // If informationNeeds is provided, increase the limit to get more results
+    // If informationNeeded is provided, increase the limit to get more results
     // that will be filtered later by the AI
-    const searchLimit = informationNeeds ? 
+    const searchLimit = informationNeeded ? 
       (params.limit ? params.limit * 4 : defaultLimit * 4) : 
       (params.limit || defaultLimit);
     
@@ -2371,7 +2371,7 @@ export class KnowledgeGraphClient {
       sortBy: params.sortBy,
       includeObservations,
       zone,
-      informationNeeds,
+      informationNeeded,
       reason
     };
     
@@ -2403,12 +2403,12 @@ export class KnowledgeGraphClient {
         return entity;
       });
     
-    // Apply AI filtering if informationNeeds is provided and AI is available
+    // Apply AI filtering if informationNeeded is provided and AI is available
     let filteredEntities = entities;
-    if (informationNeeds && GroqAI.isEnabled && entities.length > 0) {
+    if (informationNeeded && GroqAI.isEnabled && entities.length > 0) {
       try {
         // Get relevant entity names using AI filtering
-        const usefulness = await GroqAI.filterSearchResults(entities, informationNeeds, reason);
+        const usefulness = await GroqAI.filterSearchResults(entities, informationNeeded, reason);
         
         // If AI filtering returned null (error case), use original entities
         if (usefulness === null) {

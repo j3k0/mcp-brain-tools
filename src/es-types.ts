@@ -123,6 +123,6 @@ export interface ESSearchParams {
   sortBy?: 'relevance' | 'recent' | 'importance';
   includeObservations?: boolean;
   zone?: string; // Optional memory zone to search in
-  informationNeeds?: string; // Description of what information the user is looking for
+  informationNeeded?: string; // Description of what information the user is looking for
   reason?: string; // Reason for searching, provides context to the search engine AI agent
 } 
