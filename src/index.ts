@@ -98,7 +98,7 @@ async function startServer() {
               file_paths: {
                 type: "array",
                 items: { type: "string" },
-                description: "Paths to the files to inspect"
+                description: "Paths to the files (or directories) to inspect"
               },
               information_needed: {
                 type: "string",

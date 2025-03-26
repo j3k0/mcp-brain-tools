@@ -6,8 +6,114 @@ import type { PathLike } from 'fs';
 import type { dirname } from 'path';
 
 /**
+ * Default ignore patterns for file discovery
+ */
+const DEFAULT_IGNORE_PATTERNS = [
+  '**/node_modules/**',
+  '**/.git/**',
+  '**/dist/**',
+  '**/build/**',
+  '**/.cache/**',
+  '**/coverage/**',
+  '**/.next/**',
+  '**/out/**',
+  '**/logs/**',
+  '**/*.log',
+  '**/*.min.js',
+  '**/*.min.css',
+  '**/*.map',
+  '**/*.d.ts'
+];
+
+const MAX_LINES = 1000;
+
+/**
+ * Check if a path matches any of the ignore patterns
+ * @param filePath Path to check
+ * @param ignorePatterns Array of glob patterns to ignore
+ * @returns True if the path should be ignored
+ */
+function shouldIgnore(filePath: string, ignorePatterns: string[] = DEFAULT_IGNORE_PATTERNS): boolean {
+  // Simple glob pattern matching
+  for (const pattern of ignorePatterns) {
+    if (pattern.startsWith('**/')) {
+      // Pattern like "**/node_modules/**"
+      const part = pattern.slice(3);
+      if (filePath.includes(part)) {
+        return true;
+      }
+    } else if (pattern.endsWith('/**')) {
+      // Pattern like ".git/**"
+      const part = pattern.slice(0, -3);
+      if (filePath.startsWith(part + '/') || filePath === part) {
+        return true;
+      }
+    } else if (pattern.includes('*')) {
+      // Pattern like "*.log"
+      const regex = new RegExp('^' + pattern.replace(/\./g, '\\.').replace(/\*/g, '.*') + '$');
+      if (regex.test(path.basename(filePath))) {
+        return true;
+      }
+    } else {
+      // Exact match
+      if (filePath.endsWith(pattern) || filePath === pattern) {
+        return true;
+      }
+    }
+  }
+  return false;
+}
+
+/**
+ * Recursively discover files in a directory
+ * @param dirPath Path to the directory to scan
+ * @param ignorePatterns Array of glob patterns to ignore
+ * @param baseDir Base directory for relative path calculation (usually the same as dirPath initially)
+ * @returns Array of file paths discovered
+ */
+export async function discoverFiles(
+  dirPath: string,
+  ignorePatterns: string[] = DEFAULT_IGNORE_PATTERNS,
+  baseDir?: string
+): Promise<string[]> {
+  // Initialize baseDir on first call
+  baseDir = baseDir || dirPath;
+  
+  // Get directory contents
+  const entries = await fs.readdir(dirPath, { withFileTypes: true });
+  const files: string[] = [];
+  
+  // Process each entry
+  for (const entry of entries) {
+    const fullPath = path.join(dirPath, entry.name);
+    const relativePath = path.relative(baseDir, fullPath);
+    
+    // Skip ignored paths
+    if (shouldIgnore(relativePath, ignorePatterns)) {
+      continue;
+    }
+    
+    if (entry.isDirectory()) {
+      // Recursively scan subdirectories
+      const subDirFiles = await discoverFiles(fullPath, ignorePatterns, baseDir);
+      files.push(...subDirFiles);
+    } else if (entry.isFile()) {
+      // Add files to the result
+      files.push(fullPath);
+    }
+  }
+  
+  return files;
+}
+
+async function listTopLevelDirectories(dirPath: string): Promise<string[]> {
+  const entries = await fs.readdir(dirPath, { withFileTypes: true });
+  return entries.filter(entry => entry.isDirectory()).map(entry => path.join(dirPath, entry.name));
+}
+
+/**
  * Smart file inspection that uses AI to filter relevant content
- * @param filePath Path to the file to inspect
+ * @param filePath Path to the file or directory to inspect
  * @param informationNeeded Description of what information is needed from the file
  * @param reason Additional context about why this information is needed
  * @returns Array of relevant lines with their line numbers and relevance scores
@@ -18,7 +124,126 @@ export async function inspectFile(
   reason?: string
 ): Promise<{lines: {lineNumber: number, content: string}[], tentativeAnswer?: string}> {
   try {
-    // Read the file
+    // Check if this is a directory
+    const stats = await fs.stat(filePath);
+    
+    if (stats.isDirectory()) {
+      logger.info(`Inspecting directory: ${filePath}`);
+      
+      // Discover files in the directory
+      const files = await discoverFiles(filePath.toString());
+      
+      if (files.length === 0) {
+        return {
+          lines: [],
+          tentativeAnswer: "No files found in directory after applying ignore patterns"
+        };
+      }
+      if (files.length > 80) {
+        return {
+          lines: (await listTopLevelDirectories(filePath.toString())).map(dir => ({
+            lineNumber: 0,
+            content: dir
+          })),
+          tentativeAnswer: "Too many files found in directory, returning list of top level directories"
+        };
+      }
+      
+      // Convert to relative paths to save tokens
+      const basePath = filePath.toString();
+      const relativeFiles = files.map(file => path.relative(basePath, file));
+      
+      // Prepare a list of files for AI to decide which ones to inspect
+      const fileListContent = relativeFiles.map((file, index) => ({
+        lineNumber: index + 1,
+        content: file
+      }));
+      
+      // If AI service is not enabled, return a limited set of files
+      if (!GroqAI.isEnabled) {
+        logger.warn('AI service not enabled, returning limited set of files');
+        return {
+          lines: fileListContent.slice(0, 5),
+          tentativeAnswer: "AI service not enabled. Returning first 5 files only."
+        };
+      }
+      
+      // Use AI to filter relevant files
+      const aiResponse = await GroqAI.filterFileContent(
+        fileListContent,
+        `Select only the lines with the most relevant file paths (max 5 files) that might contain information about: ${informationNeeded}\nYou can mention additional eventual candidates (file paths) in your tentative answer, but don't include them in the line ranges.`,
+        reason
+      );
+      
+      const selectedFileIndices = aiResponse.lineRanges.flatMap(range => {
+        const [start, end] = range.split('-').map(Number);
+        return Array.from({ length: end - start + 1 }, (_, i) => start + i - 1);
+      });
+      
+      // Get selected files based on line indices (limited to 5)
+      const selectedRelativeFiles = selectedFileIndices
+        .map(index => {
+          if (index >= 0 && index < fileListContent.length) {
+            return fileListContent[index].content;
+          }
+          return null;
+        })
+        .filter(Boolean)
+        .slice(0, 5) as string[];
+      
+      // Convert back to full paths for file reading
+      const selectedFiles = selectedRelativeFiles.map(relPath => path.join(basePath, relPath));
+      
+      // If no files were selected or AI service failed, return a small subset of all files
+      if (selectedFiles.length === 0) {
+        const maxFiles = 5; // Strictly limit to prevent overloading
+        return {
+          lines: fileListContent.slice(0, maxFiles),
+          tentativeAnswer: "Could not determine relevant files, returning the first few files found"
+        };
+      }
+      
+      // Now inspect the selected files individually and combine results
+      const allResults: {
+        lines: {lineNumber: number, content: string}[],
+        tentativeAnswer?: string
+      } = { lines: [] };
+      
+      for (const selectedFile of selectedFiles) {
+        try {
+          const fileResult = await inspectFile(selectedFile, informationNeeded, reason);
+          
+          // Use relative path for context to save tokens
+          const relativePath = path.relative(basePath, selectedFile);
+          
+          // Add file path to each line for context
+          const linesWithFilePath = fileResult.lines.map(line => ({
+            lineNumber: line.lineNumber,
+            content: `[${relativePath}:${line.lineNumber}] ${line.content}`
+          }));
+          
+          allResults.lines.push(...linesWithFilePath);
+          
+          // Combine tentative answers if available
+          if (fileResult.tentativeAnswer && fileResult.tentativeAnswer !== "No answers given by AI") {
+            if (!allResults.tentativeAnswer) {
+              allResults.tentativeAnswer = `From ${path.basename(selectedFile)}: ${fileResult.tentativeAnswer}`;
+            } else {
+              allResults.tentativeAnswer += `\n\nFrom ${path.basename(selectedFile)}: ${fileResult.tentativeAnswer}`;
+            }
+          }
+        } catch (error) {
+          logger.error('Error inspecting selected file:', { error, selectedFile });
+          // Continue with other files even if one fails
+        }
+      }
+      if (allResults.lines.length > MAX_LINES) {
+        allResults.lines = allResults.lines.slice(0, MAX_LINES);
+      }
+      return allResults;
+    }
+    
+    // Original behavior for single file inspection
     const content = await fs.readFile(filePath, 'utf8');
     
     // Split into lines and add line numbers
@@ -47,7 +272,11 @@ export async function inspectFile(
     };
   } catch (error) {
     logger.error('Error inspecting file:', { error, filePath });
-    throw error;
+    // throw error;
+    return {
+      lines: [],
+      tentativeAnswer: "Error inspecting file: " + error.message
+    };
   }
 }
 
