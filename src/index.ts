@@ -111,6 +111,11 @@ async function startServer() {
               include_lines: {
                 type: "boolean",
                 description: "Whether to include the actual line content in the response, which uses more of your limited token quota, but gives more informatiom (default: false)"
+              },
+              keywords: {
+                type: "array",
+                items: { type: "string" },
+                description: "Array of keywords to find in files when inspecting directories. If provided, the AI will target files that contain one of these keywords. Pretty much required if you are inspecting top level directories."
               }
             },
             required: ["file_paths", "information_needed", "include_lines"],
@@ -620,12 +625,12 @@ async function startServer() {
     };
 
     if (toolName === "inspect_files") {
-      const { file_paths, information_needed, reason, include_lines } = params;
+      const { file_paths, information_needed, reason, include_lines, keywords } = params;
       const results = [];
 
       for (const filePath of file_paths) {
         try {
-          const fileResults = await inspectFile(filePath, information_needed, reason);
+          const fileResults = await inspectFile(filePath, information_needed, reason, keywords);
           results.push({
             filePath,
             lines: include_lines ? fileResults.lines.map(line => `${line.lineNumber}:${line.content}`) : [],

@@ -6,6 +6,15 @@ import type { PathLike } from 'fs';
 import type { dirname } from 'path';
 
 /**
+ * Escapes special characters in a string for use in a regular expression
+ * @param string The string to escape
+ * @returns Escaped string safe for regex usage
+ */
+function escapeRegExp(string: string): string {
+  return string.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+/**
  * Default ignore patterns for file discovery
  */
 const DEFAULT_IGNORE_PATTERNS = [
@@ -112,16 +121,84 @@ async function listTopLevelDirectories(dirPath: string): Promise<string[]> {
 }
 
 /**
+ * Search for files containing specific keywords in a directory
+ * @param dirPath Path to the directory to search
+ * @param keywords Array of keywords to search for
+ * @param ignorePatterns Array of glob patterns to ignore
+ * @param maxResults Maximum number of results to return
+ * @returns Array of file paths that match the keywords
+ */
+export async function searchFilesByKeywords(
+  dirPath: string,
+  keywords: string[],
+  ignorePatterns: string[] = DEFAULT_IGNORE_PATTERNS,
+  maxResults: number = 20
+): Promise<string[]> {
+  // No keywords - just return all files up to maxResults
+  if (!keywords || keywords.length === 0) {
+    const allFiles = await discoverFiles(dirPath, ignorePatterns);
+    return allFiles.slice(0, maxResults);
+  }
+
+  logger.info(`Searching for files with keywords: ${keywords.join(', ')}`);
+  
+  // Create a regex pattern from keywords
+  const keywordPattern = new RegExp(keywords.map(k => escapeRegExp(k)).join('|'), 'i');
+  
+  // Get all files recursively
+  const allFiles = await discoverFiles(dirPath, ignorePatterns);
+  const matchingFiles: string[] = [];
+  
+  // First pass: Check file names only (faster)
+  for (const file of allFiles) {
+    if (keywordPattern.test(file)) {
+      matchingFiles.push(file);
+      if (matchingFiles.length >= maxResults) {
+        logger.info(`Found ${matchingFiles.length} files matching keywords in file names`);
+        return matchingFiles;
+      }
+    }
+  }
+  
+  // Second pass: Check file contents for remaining files
+  for (const file of allFiles) {
+    // Skip files already matched
+    if (matchingFiles.includes(file)) {
+      continue;
+    }
+    
+    try {
+      const content = await fs.readFile(file, 'utf8');
+      if (keywordPattern.test(content)) {
+        matchingFiles.push(file);
+        if (matchingFiles.length >= maxResults) {
+          logger.info(`Found ${matchingFiles.length} files matching keywords`);
+          return matchingFiles;
+        }
+      }
+    } catch (error) {
+      // Skip files that can't be read
+      logger.warn(`Could not read file for keyword matching: ${file}`, { error });
+    }
+  }
+  
+  logger.info(`Found ${matchingFiles.length} files matching keywords`);
+  return matchingFiles;
+}
+
+/**
  * Smart file inspection that uses AI to filter relevant content
  * @param filePath Path to the file or directory to inspect
  * @param informationNeeded Description of what information is needed from the file
  * @param reason Additional context about why this information is needed
+ * @param keywords Optional array of keywords to filter files when inspecting directories
  * @returns Array of relevant lines with their line numbers and relevance scores
  */
 export async function inspectFile(
   filePath: PathLike,
   informationNeeded: string,
-  reason?: string
+  reason?: string,
+  keywords?: string[]
 ): Promise<{lines: {lineNumber: number, content: string}[], tentativeAnswer?: string}> {
   try {
     // Check if this is a directory
@@ -130,13 +207,21 @@ export async function inspectFile(
     if (stats.isDirectory()) {
       logger.info(`Inspecting directory: ${filePath}`);
       
-      // Discover files in the directory
-      const files = await discoverFiles(filePath.toString());
+      let files: string[] = [];
+      
+      // If keywords are provided, use them to filter files
+      if (keywords && keywords.length > 0) {
+        // Use the dedicated keyword search function
+        files = await searchFilesByKeywords(filePath.toString(), keywords);
+      } else {
+        // Discover files in the directory (original behavior)
+        files = await discoverFiles(filePath.toString());
+      }
       
       if (files.length === 0) {
         return {
           lines: [],
-          tentativeAnswer: "No files found in directory after applying ignore patterns"
+          tentativeAnswer: "No files found in directory after applying filters"
         };
       }
       if (files.length > 80) {
@@ -211,7 +296,7 @@ export async function inspectFile(
       
       for (const selectedFile of selectedFiles) {
         try {
-          const fileResult = await inspectFile(selectedFile, informationNeeded, reason);
+          const fileResult = await inspectFile(selectedFile, informationNeeded, reason, keywords);
           
           // Use relative path for context to save tokens
           const relativePath = path.relative(basePath, selectedFile);

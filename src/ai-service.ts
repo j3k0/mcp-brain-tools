@@ -631,7 +631,7 @@ The response should be a raw JSON object like: {"lineRanges": ["1-10", "20-40", 
     }
 
     userPrompt += `\n\nHere are the file contents to analyze (<line number>:<content>):
-${fileLines.map(line => `${line.lineNumber}:${line.content}`).join('\n')}
+${fileLines.map(line => `${line.lineNumber}:${line.content}`).slice(0, 2000).join('\n')}
 
 Return a JSON object with: {
     "temptativeAnswer": "Answer to the information needed, if possible. To be too general, be specific. Make it detailed, but without useless details. It must be straight to the point, using as little words as posssible without losing information. The text can be long (even 100 words or more if necessary), it's a good thing as long as it's relevant and based on facts based on the file content. But information must be condensed, don't be too verbose.",
