@@ -115,10 +115,10 @@ async function startServer() {
               keywords: {
                 type: "array",
                 items: { type: "string" },
-                description: "Array of keywords to find in files when inspecting directories. If provided, the AI will target files that contain one of these keywords. Pretty much required if you are inspecting top level directories."
+                description: "Array of specific keywords related to the information needed. AI will target files that contain one of these keywords."
               }
             },
-            required: ["file_paths", "information_needed", "include_lines"],
+            required: ["file_paths", "information_needed", "include_lines", "keywords"],
             additionalProperties: false,
             "$schema": "http://json-schema.org/draft-07/schema#"
           }
