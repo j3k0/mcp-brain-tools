@@ -634,6 +634,15 @@ async function startServer() {
             },
             required: ["zone"]
           }
+        },
+        {
+          name: "get_time_utc",
+          description: "Get the current UTC time in YYYY-MM-DD hh:mm:ss format",
+          inputSchema: {
+            type: "object",
+            properties: {},
+            additionalProperties: false
+          }
         }
       ]
     };
@@ -1297,6 +1306,26 @@ async function startServer() {
           error: `Error getting zone stats: ${(error as Error).message}`
         });
       }
+    }
+    else if (toolName === "get_time_utc") {
+      // Get current time in UTC
+      const now = new Date();
+      
+      // Format time as YYYY-MM-DD hh:mm:ss
+      const pad = (num: number) => num.toString().padStart(2, '0');
+      
+      const year = now.getUTCFullYear();
+      const month = pad(now.getUTCMonth() + 1); // months are 0-indexed
+      const day = pad(now.getUTCDate());
+      const hours = pad(now.getUTCHours());
+      const minutes = pad(now.getUTCMinutes());
+      const seconds = pad(now.getUTCSeconds());
+      
+      const formattedTime = `${year}-${month}-${day} ${hours}:${minutes}:${seconds}`;
+      
+      return formatResponse({
+        utc_time: formattedTime
+      });
     }
   });
 
