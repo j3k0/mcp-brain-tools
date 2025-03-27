@@ -17,3 +17,5 @@ launch.bak
 # Test data files
 test-data/
 manual-tests/
+
+dolphin-mcp.log

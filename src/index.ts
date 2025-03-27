@@ -124,6 +124,48 @@ async function startServer() {
           }
         },
         {
+          name: "inspect_knowledge_graph",
+          description: "Agent driven knowledge graph inspection that uses AI to retrieve relevant entities and relations based on a query.",
+          inputSchema: {
+            type: "object",
+            properties: {
+              information_needed: {
+                type: "string",
+                description: "Full description of what information is needed from the knowledge graph, including the context of the information needed. Do not be vague, be specific. The AI agent does not have access to your context, only this \"information needed\" and \"reason\" fields. That's all it will use to decide that an entity is relevant to the information needed."
+              },
+              reason: {
+                type: "string",
+                description: "Explain why this information is needed to help the AI agent give better results. The more context you provide, the better the results will be."
+              },
+              include_entities: {
+                type: "boolean",
+                description: "Whether to include the full entity details in the response, which uses more of your limited token quota, but gives more information (default: false)"
+              },
+              include_relations: {
+                type: "boolean",
+                description: "Whether to include the entity relations in the response (default: false)"
+              },
+              keywords: {
+                type: "array",
+                items: { type: "string" },
+                description: "Array of specific keywords related to the information needed. AI will target entities that match one of these keywords."
+              },
+              memory_zone: {
+                type: "string",
+                description: "Memory zone to search in. If not provided, uses the default zone."
+              },
+              entity_types: {
+                type: "array",
+                items: { type: "string" },
+                description: "Optional filter to specific entity types"
+              }
+            },
+            required: ["information_needed", "keywords"],
+            additionalProperties: false,
+            "$schema": "http://json-schema.org/draft-07/schema#"
+          }
+        },
+        {
           name: "create_entities",
           description: "Create entities in knowledge graph (memory)",
           inputSchema: {
@@ -648,6 +690,37 @@ async function startServer() {
         success: true,
         results
       });
+    }
+    else if (toolName === "inspect_knowledge_graph") {
+      const { information_needed, reason, include_entities, include_relations, keywords, memory_zone, entity_types } = params;
+      
+      // Import the inspectKnowledgeGraph function
+      const { inspectKnowledgeGraph } = await import('./kg-inspection.js');
+      
+      try {
+        // Call the inspectKnowledgeGraph function
+        const results = await inspectKnowledgeGraph(
+          kgClient,
+          information_needed,
+          reason,
+          keywords,
+          memory_zone,
+          entity_types
+        );
+        
+        // Format the response based on include_entities and include_relations flags
+        return formatResponse({
+          success: true,
+          tentativeAnswer: results.tentativeAnswer,
+          entities: include_entities ? results.entities : results.entities.map(e => ({ name: e.name, entityType: e.entityType })),
+          relations: include_relations ? results.relations : []
+        });
+      } catch (error) {
+        return formatResponse({
+          success: false,
+          error: `Error inspecting knowledge graph: ${error.message}`
+        });
+      }
     }
     else if (toolName === "create_entities") {
       const entities = params.entities;
