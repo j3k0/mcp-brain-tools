@@ -318,7 +318,9 @@ IMPORTANT: Your response will be directly passed to JSON.parse(). Do NOT use mar
         body: JSON.stringify({
           model: modelToUse,
           messages,
-        })
+          max_tokens: 1000,
+          temperature: 0.25,
+        }),
       });
 
       logger.info('Groq API response:', { status: response.status, statusText: response.statusText });
@@ -622,7 +624,9 @@ Return your response as a raw, valid JSON object with "description" and "shortDe
 
     const systemPrompt = `You are an intelligent file content analyzer.
 Your task is to analyze file contents and determine which lines are relevant to the user's information needs.
-The response should be a raw JSON object like: {"lineRanges": ["1-10", "20-40", ...], "tentativeAnswer": "Answer to the information needed, if possible."}`;
+The response should be a raw JSON object like: {"lineRanges": ["1-10", "20-40", ...], "tentativeAnswer": "Answer to the information needed, if possible."}
+Be selective, the goal is to find the most relevant lines, not to include all of them. If some lines might be relevant but not worth returning completely, the tentative answer can mention additional line range with a short description.
+`;
 
     let userPrompt = `Information needed: ${informationNeeded}`;
     
@@ -634,7 +638,7 @@ The response should be a raw JSON object like: {"lineRanges": ["1-10", "20-40", 
 ${fileLines.map(line => `${line.lineNumber}:${line.content}`).slice(0, 2000).join('\n')}
 
 Return a JSON object with: {
-    "temptativeAnswer": "Answer to the information needed, if possible. To be too general, be specific. Make it detailed, but without useless details. It must be straight to the point, using as little words as posssible without losing information. The text can be long (even 100 words or more if necessary), it's a good thing as long as it's relevant and based on facts based on the file content. But information must be condensed, don't be too verbose.",
+    "temptativeAnswer": "Answer to the information needed, if possible. Do not be too general, be specific. Make it detailed, but without useless details. It must be straight to the point, using as little words as posssible without losing information. The text can be long (even 100 words or more if necessary), it's a good thing as long as it's relevant and based on facts based on the file content. But information must be condensed, don't be too verbose.",
     "lineRanges": ["1-10", "20-40", ...]
 }
 IMPORTANT: Your response must be a raw JSON object that can be parsed with JSON.parse().`;

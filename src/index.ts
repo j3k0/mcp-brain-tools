@@ -682,9 +682,10 @@ async function startServer() {
       for (const filePath of file_paths) {
         try {
           const fileResults = await inspectFile(filePath, information_needed, reason, keywords);
-          results.push({
+          results.push({            
             filePath,
-            lines: include_lines ? fileResults.lines.map(line => `${line.lineNumber}:${line.content}`) : [],
+            linesContent: `lines as returned by cat -n ${filePath}`,
+            lines: include_lines ? fileResults.lines.map(line => `${line.lineNumber}\t${line.content}`) : [],
             tentativeAnswer: fileResults.tentativeAnswer
           });
         } catch (error) {
