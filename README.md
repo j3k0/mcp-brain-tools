@@ -1,3 +1,5 @@
+[![MseeP.ai Security Assessment Badge](https://mseep.net/pr/j3k0-mcp-brain-tools-badge.png)](https://mseep.ai/app/j3k0-mcp-brain-tools)
+
 # MCP Memory: Persistent Memory for AI Conversations 🧠
 
 ![Version](https://img.shields.io/badge/version-1.0.0-blue)
