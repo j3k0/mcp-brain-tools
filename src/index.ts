@@ -115,7 +115,7 @@ async function startServer() {
               keywords: {
                 type: "array",
                 items: { type: "string" },
-                description: "Array of specific keywords related to the information needed. AI will target files that contain one of these keywords."
+                description: "Array of specific keywords related to the information needed. AI will target files that contain one of these keywords. REQUIRED and cannot be null or empty - the more keywords you provide, the better the results. Include variations, synonyms, and related terms."
               }
             },
             required: ["file_paths", "information_needed", "include_lines", "keywords"],
@@ -148,7 +148,7 @@ async function startServer() {
               keywords: {
                 type: "array",
                 items: { type: "string" },
-                description: "Array of specific keywords related to the information needed. AI will target entities that match one of these keywords."
+                description: "Array of specific keywords related to the information needed. AI will target entities that match one of these keywords. REQUIRED and cannot be null or empty - the more keywords you provide, the better the results. Include variations, synonyms, and related terms."
               },
               memory_zone: {
                 type: "string",
@@ -677,6 +677,15 @@ async function startServer() {
 
     if (toolName === "inspect_files") {
       const { file_paths, information_needed, reason, include_lines, keywords } = params;
+      
+      // Validate keywords
+      if (!keywords || !Array.isArray(keywords) || keywords.length === 0) {
+        return formatResponse({
+          success: false,
+          error: "Keywords parameter is required and cannot be null or empty. Please provide an array of keywords to help find relevant information. The more keywords you provide (including variations, synonyms, and related terms), the better the results."
+        });
+      }
+      
       const results = [];
 
       for (const filePath of file_paths) {
@@ -703,6 +712,14 @@ async function startServer() {
     }
     else if (toolName === "inspect_knowledge_graph") {
       const { information_needed, reason, include_entities, include_relations, keywords, memory_zone, entity_types } = params;
+      
+      // Validate keywords
+      if (!keywords || !Array.isArray(keywords) || keywords.length === 0) {
+        return formatResponse({
+          success: false,
+          error: "Keywords parameter is required and cannot be null or empty. Please provide an array of keywords to help find relevant entities. The more keywords you provide (including variations, synonyms, and related terms), the better the results."
+        });
+      }
       
       // Import the inspectKnowledgeGraph function
       const { inspectKnowledgeGraph } = await import('./kg-inspection.js');
