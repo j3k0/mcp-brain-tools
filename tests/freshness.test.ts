@@ -1,4 +1,5 @@
 import { KnowledgeGraphClient } from '../src/kg-client.js';
+import { computeFreshness, getConfidenceLabel } from '../src/freshness.js';
 
 const TEST_ES_NODE = process.env.TEST_ES_NODE || 'http://localhost:9200';
 const TEST_ZONE = 'test-freshness';
@@ -51,5 +52,57 @@ describe('Freshness & Spaced Repetition', () => {
       const diffDays = (nextReview - verified) / (1000 * 60 * 60 * 24);
       expect(diffDays).toBeCloseTo(365, 0);
     });
+  });
+});
+
+describe('Freshness computation', () => {
+  it('should return 1.0 for just-verified entity', () => {
+    const now = new Date();
+    expect(computeFreshness(now.toISOString(), 7)).toBeCloseTo(1.0, 1);
+  });
+
+  it('should return 0.0 at exactly review date', () => {
+    const now = new Date();
+    const verifiedAt = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000); // 7 days ago
+    expect(computeFreshness(verifiedAt.toISOString(), 7)).toBeCloseTo(0.0, 1);
+  });
+
+  it('should return -1.0 when one interval overdue', () => {
+    const now = new Date();
+    const verifiedAt = new Date(now.getTime() - 14 * 24 * 60 * 60 * 1000); // 14 days ago
+    expect(computeFreshness(verifiedAt.toISOString(), 7)).toBeCloseTo(-1.0, 1);
+  });
+
+  it('should return -2.0 when two intervals overdue', () => {
+    const now = new Date();
+    const verifiedAt = new Date(now.getTime() - 21 * 24 * 60 * 60 * 1000); // 21 days ago
+    expect(computeFreshness(verifiedAt.toISOString(), 7)).toBeCloseTo(-2.0, 1);
+  });
+});
+
+describe('Confidence labels', () => {
+  it('should return "fresh" for freshness >= 0.5', () => {
+    expect(getConfidenceLabel(0.8)).toBe('fresh');
+    expect(getConfidenceLabel(0.5)).toBe('fresh');
+  });
+
+  it('should return "normal" for freshness >= 0 but < 0.5', () => {
+    expect(getConfidenceLabel(0.3)).toBe('normal');
+    expect(getConfidenceLabel(0.0)).toBe('normal');
+  });
+
+  it('should return "aging" for freshness >= -1 but < 0', () => {
+    expect(getConfidenceLabel(-0.5)).toBe('aging');
+    expect(getConfidenceLabel(-1.0)).toBe('aging');
+  });
+
+  it('should return "stale" for freshness >= -2 but < -1', () => {
+    expect(getConfidenceLabel(-1.5)).toBe('stale');
+    expect(getConfidenceLabel(-2.0)).toBe('stale');
+  });
+
+  it('should return "archival" for freshness < -2', () => {
+    expect(getConfidenceLabel(-2.1)).toBe('archival');
+    expect(getConfidenceLabel(-5.0)).toBe('archival');
   });
 });
