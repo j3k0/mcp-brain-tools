@@ -51,7 +51,13 @@ export const KG_INDEX_CONFIG = {
       lastWrite: { type: 'date' },
       readCount: { type: 'integer' },
       relevanceScore: { type: 'float' },
-      
+
+      // Spaced repetition fields
+      verifiedAt: { type: 'date' },
+      verifyCount: { type: 'integer' },
+      reviewInterval: { type: 'integer' },
+      nextReviewAt: { type: 'date' },
+
       // Relation fields
       from: { type: 'keyword' },
       to: { type: 'keyword' },
@@ -71,6 +77,12 @@ export interface ESEntity {
   readCount: number;
   relevanceScore: number;
   zone?: string; // The memory zone this entity belongs to
+
+  // Spaced repetition fields
+  verifiedAt: string;       // ISO timestamp — last explicit verification (initialized to creation time)
+  verifyCount: number;      // how many times explicitly verified (starts at 0)
+  reviewInterval: number;   // days until next review (default: 7, doubles on verify, capped at 365)
+  nextReviewAt: string;     // ISO timestamp — verifiedAt + reviewInterval days
 }
 
 // Relation document type

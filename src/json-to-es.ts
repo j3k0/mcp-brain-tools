@@ -38,6 +38,11 @@ async function importFromJsonFile(
         
         if (item.type === 'entity') {
           // Convert to ESEntity format
+          const verifiedAt = item.verifiedAt || now;
+          const reviewInterval = typeof item.reviewInterval === 'number' ? item.reviewInterval : 7;
+          const nextReviewDate = new Date(verifiedAt);
+          nextReviewDate.setDate(nextReviewDate.getDate() + reviewInterval);
+
           const entity: ESEntity = {
             type: 'entity',
             name: item.name,
@@ -47,7 +52,11 @@ async function importFromJsonFile(
             lastWrite: item.lastWrite || now,
             readCount: typeof item.readCount === 'number' ? item.readCount : 0,
             relevanceScore: typeof item.relevanceScore === 'number' ? item.relevanceScore : (item.isImportant ? 10 : 1.0),
-            zone: item.zone || esOptions.defaultZone || 'default'
+            zone: item.zone || esOptions.defaultZone || 'default',
+            verifiedAt: verifiedAt,
+            verifyCount: typeof item.verifyCount === 'number' ? item.verifyCount : 0,
+            reviewInterval: reviewInterval,
+            nextReviewAt: item.nextReviewAt || nextReviewDate.toISOString(),
           };
           items.push(entity);
         } else if (item.type === 'relation') {

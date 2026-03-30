@@ -141,7 +141,7 @@ export class KnowledgeGraphClient {
    * @param options.validateZones Whether to validate that zones exist before creating entities (default: true)
    */
   async saveEntity(
-    entity: Omit<ESEntity, 'type' | 'readCount' | 'lastRead' | 'lastWrite' | 'zone'>, 
+    entity: Omit<ESEntity, 'type' | 'readCount' | 'lastRead' | 'lastWrite' | 'zone' | 'verifiedAt' | 'verifyCount' | 'reviewInterval' | 'nextReviewAt'> & { reviewInterval?: number },
     zone?: string,
     options?: {
       validateZones?: boolean;
@@ -168,7 +168,13 @@ export class KnowledgeGraphClient {
 
     const now = new Date().toISOString();
     const existingEntity = await this.getEntity(entity.name, actualZone);
-    
+
+    // Calculate nextReviewAt from reviewInterval
+    const reviewInterval = entity.reviewInterval ?? (existingEntity?.reviewInterval ?? 7);
+    const verifiedAt = existingEntity?.verifiedAt ?? now;
+    const nextReviewDate = new Date(verifiedAt);
+    nextReviewDate.setDate(nextReviewDate.getDate() + reviewInterval);
+
     const newEntity: ESEntity = {
       type: 'entity',
       name: entity.name,
@@ -179,7 +185,12 @@ export class KnowledgeGraphClient {
       lastRead: existingEntity?.lastRead ?? now,
       lastWrite: now,
       relevanceScore: entity.relevanceScore ?? (existingEntity?.relevanceScore ?? 1.0),
-      zone: actualZone
+      zone: actualZone,
+      // Spaced repetition: preserve existing values or set defaults
+      verifiedAt: verifiedAt,
+      verifyCount: existingEntity?.verifyCount ?? 0,
+      reviewInterval: reviewInterval,
+      nextReviewAt: existingEntity?.nextReviewAt ?? nextReviewDate.toISOString(),
     };
 
     const indexName = this.getIndexForZone(actualZone);
