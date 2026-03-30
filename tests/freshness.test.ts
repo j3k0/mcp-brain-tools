@@ -54,6 +54,66 @@ describe('Freshness & Spaced Repetition', () => {
       expect(diffDays).toBeCloseTo(365, 0);
     });
   });
+
+  describe('verify_entity', () => {
+    it('should update verification fields and double the review interval', async () => {
+      // Create entity with 7-day interval
+      await client.saveEntity({
+        name: 'test-verify',
+        entityType: 'test',
+        observations: [],
+        relevanceScore: 1.0,
+      }, TEST_ZONE);
+
+      const verified = await client.verifyEntity('test-verify', TEST_ZONE);
+
+      expect(verified.verifyCount).toBe(1);
+      expect(verified.reviewInterval).toBe(14); // doubled from 7
+      expect(verified.verifiedAt).toBeDefined();
+
+      // nextReviewAt should be ~14 days from now
+      const now = Date.now();
+      const nextReview = new Date(verified.nextReviewAt).getTime();
+      const diffDays = (nextReview - now) / (1000 * 60 * 60 * 24);
+      expect(diffDays).toBeCloseTo(14, 0);
+    });
+
+    it('should accept a custom reviewInterval override', async () => {
+      await client.saveEntity({
+        name: 'test-verify-override',
+        entityType: 'test',
+        observations: [],
+        relevanceScore: 1.0,
+      }, TEST_ZONE);
+
+      const verified = await client.verifyEntity('test-verify-override', TEST_ZONE, {
+        reviewInterval: 365,
+      });
+
+      expect(verified.reviewInterval).toBe(365);
+    });
+
+    it('should cap review interval at 365 days', async () => {
+      await client.saveEntity({
+        name: 'test-verify-cap',
+        entityType: 'test',
+        observations: [],
+        relevanceScore: 1.0,
+        reviewInterval: 200,
+      }, TEST_ZONE);
+
+      const verified = await client.verifyEntity('test-verify-cap', TEST_ZONE);
+
+      // 200 * 2 = 400, capped at 365
+      expect(verified.reviewInterval).toBe(365);
+    });
+
+    it('should throw if entity does not exist', async () => {
+      await expect(
+        client.verifyEntity('nonexistent-entity', TEST_ZONE)
+      ).rejects.toThrow('not found');
+    });
+  });
 });
 
 describe('Freshness computation', () => {

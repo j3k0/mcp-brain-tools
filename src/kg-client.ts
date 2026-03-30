@@ -1757,6 +1757,53 @@ export class KnowledgeGraphClient {
   }
 
   /**
+   * Verify an entity — confirm its information is still accurate.
+   * Extends the review interval via spaced repetition (doubles, capped at 365 days).
+   * @param name Entity name
+   * @param zone Optional memory zone
+   * @param options Optional overrides
+   * @param options.reviewInterval Override the review interval instead of doubling
+   */
+  async verifyEntity(
+    name: string,
+    zone?: string,
+    options?: { reviewInterval?: number }
+  ): Promise<ESEntity> {
+    const actualZone = zone || this.defaultZone;
+
+    const entity = await this.getEntityWithoutUpdatingLastRead(name, actualZone);
+    if (!entity) {
+      throw new Error(`Entity "${name}" not found in zone "${actualZone}"`);
+    }
+
+    const now = new Date();
+    const newInterval = options?.reviewInterval
+      ?? Math.min(entity.reviewInterval * 2, 365);
+    const nextReviewDate = new Date(now);
+    nextReviewDate.setDate(nextReviewDate.getDate() + newInterval);
+
+    const indexName = this.getIndexForZone(actualZone);
+    const docId = `entity:${name}`;
+
+    const updatedFields = {
+      verifiedAt: now.toISOString(),
+      verifyCount: entity.verifyCount + 1,
+      reviewInterval: newInterval,
+      nextReviewAt: nextReviewDate.toISOString(),
+      lastWrite: now.toISOString(),
+    };
+
+    await this.client.update({
+      index: indexName,
+      id: docId,
+      doc: updatedFields,
+      refresh: true,
+    });
+
+    return { ...entity, ...updatedFields };
+  }
+
+  /**
    * Mark an entity as important or not important
    * @param name Entity name
    * @param important Whether the entity is important
