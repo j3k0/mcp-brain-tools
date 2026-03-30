@@ -169,6 +169,59 @@ describe('Freshness & Spaced Repetition', () => {
     });
   });
 
+  describe('Full spaced repetition lifecycle', () => {
+    it('should progress through create → age → review flag → verify → fresh', async () => {
+      // 1. Create entity
+      const entity = await client.saveEntity({
+        name: 'test-lifecycle',
+        entityType: 'test',
+        observations: [],
+        relevanceScore: 1.0,
+        reviewInterval: 1, // 1 day for fast testing
+      }, TEST_ZONE);
+      expect(entity.verifyCount).toBe(0);
+      expect(entity.reviewInterval).toBe(1);
+
+      // 2. Manually backdate to simulate aging (2 days ago)
+      const esClient = (client as any).client;
+      const indexName = `knowledge-graph@${TEST_ZONE}`;
+      const twoDaysAgo = new Date(Date.now() - 2 * 24 * 60 * 60 * 1000).toISOString();
+      await esClient.update({
+        index: indexName,
+        id: 'entity:test-lifecycle',
+        doc: {
+          verifiedAt: twoDaysAgo,
+          nextReviewAt: new Date(new Date(twoDaysAgo).getTime() + 1 * 24 * 60 * 60 * 1000).toISOString(),
+        },
+        refresh: true,
+      });
+
+      // 3. Search should show it as needing review
+      const searchResults = await client.userSearch({
+        query: 'test-lifecycle',
+        zone: TEST_ZONE,
+      });
+      const found = searchResults.entities.find(e => e.name === 'test-lifecycle');
+      expect(found).toBeDefined();
+      expect(found!.needsReview).toBe(true);
+
+      // 4. Verify the entity
+      const verified = await client.verifyEntity('test-lifecycle', TEST_ZONE);
+      expect(verified.verifyCount).toBe(1);
+      expect(verified.reviewInterval).toBe(2); // doubled from 1
+
+      // 5. Search again — should be fresh now
+      const freshResults = await client.userSearch({
+        query: 'test-lifecycle',
+        zone: TEST_ZONE,
+      });
+      const freshFound = freshResults.entities.find(e => e.name === 'test-lifecycle');
+      expect(freshFound).toBeDefined();
+      expect(freshFound!.confidence).toBe('fresh');
+      expect(freshFound!.needsReview).toBeUndefined();
+    });
+  });
+
   describe('Progressive search with freshness', () => {
     beforeAll(async () => {
       // Create a fresh entity (just created = fresh)
