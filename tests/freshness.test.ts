@@ -9,12 +9,13 @@ describe('Freshness & Spaced Repetition', () => {
 
   beforeAll(async () => {
     client = new KnowledgeGraphClient({ node: TEST_ES_NODE });
+    try { await client.deleteMemoryZone(TEST_ZONE); } catch {}
     await client.addMemoryZone(TEST_ZONE, 'Freshness test zone');
-  });
+  }, 30000);
 
   afterAll(async () => {
-    await client.deleteMemoryZone(TEST_ZONE);
-  });
+    try { await client.deleteMemoryZone(TEST_ZONE); } catch {}
+  }, 15000);
 
   describe('Entity creation with spaced repetition fields', () => {
     it('should create entity with default spaced repetition fields', async () => {
