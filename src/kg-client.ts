@@ -180,7 +180,7 @@ export class KnowledgeGraphClient {
       type: 'entity',
       name: entity.name,
       entityType: entity.entityType,
-      observations: entity.observations || [],
+      observations: [],  // Observations are now separate entities linked via is_observation_of
       // If entity exists, preserve its readCount and lastRead, but update lastWrite
       readCount: existingEntity?.readCount ?? 0,
       lastRead: existingEntity?.lastRead ?? now,
@@ -1922,7 +1922,7 @@ export class KnowledgeGraphClient {
     const updatedEntity = await this.saveEntity({
       name: entity.name,
       entityType: entity.entityType,
-      observations: entity.observations,
+      observations: [],
       relevanceScore: newRelevanceScore
     }, actualZone);
     
@@ -2505,7 +2505,6 @@ export class KnowledgeGraphClient {
         }
 
         if (includeObservations) {
-          entity.observations = src.observations;
           entity.lastWrite = src.lastWrite;
           entity.lastRead = src.lastRead;
         }

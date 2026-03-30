@@ -44,8 +44,6 @@ export const KG_INDEX_CONFIG = {
         }
       },
       entityType: { type: 'keyword' },
-      observations: { type: 'text', analyzer: 'entity_analyzer' },
-      
       // Metadata fields for ranking
       lastRead: { type: 'date' },
       lastWrite: { type: 'date' },
@@ -71,7 +69,7 @@ export interface ESEntity {
   type: 'entity';
   name: string;
   entityType: string;
-  observations: string[];
+  observations?: string[]; // Deprecated: observations are now separate entities
   lastRead: string;
   lastWrite: string;
   readCount: number;

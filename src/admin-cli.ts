@@ -234,7 +234,7 @@ async function searchGraph(query: string, zone?: string) {
       
       console.log(`${index + 1}. ${entity.name} (${entity.entityType}) [Score: ${score}]`);
       console.log(`   Zone: ${entity.zone || 'default'}`);
-      console.log(`   Observations: ${entity.observations.length}`);
+      console.log(`   Observations: ${(entity.observations || []).length}`);
       
       // Show highlights if available
       if (hit && hit.highlight) {
@@ -405,7 +405,7 @@ async function showEntity(name: string, zone?: string) {
     console.log('');
     
     console.log('Observations:');
-    entity.observations.forEach((obs: string, i: number) => {
+    (entity.observations || []).forEach((obs: string, i: number) => {
       console.log(`  ${i+1}. ${obs}`);
     });
     console.log('');

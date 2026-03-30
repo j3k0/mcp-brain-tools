@@ -839,20 +839,26 @@ async function startServer() {
         const savedEntity = await kgClient.saveEntity({
           name: entity.name,
           entityType: entity.entityType,
-          observations: entity.observations,
+          observations: [],
           relevanceScore: entity.relevanceScore ?? 1.0,
           reviewInterval: entity.reviewInterval,
         }, zone);
-        
+
+        // If observations were provided, create them as separate entities
+        if (entity.observations && entity.observations.length > 0) {
+          await kgClient.addObservations(entity.name, entity.observations, zone, {
+            reviewInterval: entity.reviewInterval,
+          });
+        }
+
         createdEntities.push(savedEntity);
       }
-      
+
       return formatResponse({
         success: true,
         entities: createdEntities.map(e => ({
           name: e.name,
           entityType: e.entityType,
-          observations: e.observations
         }))
       });
     }
@@ -873,18 +879,22 @@ async function startServer() {
         const updatedEntity = await kgClient.saveEntity({
           name: entity.name,
           entityType: entity.entityType || existingEntity.entityType,
-          observations: entity.observations || existingEntity.observations,
+          observations: [],
           relevanceScore: entity.relevanceScore || ((existingEntity.relevanceScore ?? 1.0) * 2.0)
         }, zone);
-        
+
+        // If observations were provided, create them as separate entities
+        if (entity.observations && entity.observations.length > 0) {
+          await kgClient.addObservations(entity.name, entity.observations, zone);
+        }
+
         updatedEntities.push(updatedEntity);
       }
-      
+
       return formatResponse({
         entities: updatedEntities.map(e => ({
           name: e.name,
           entityType: e.entityType,
-          observations: e.observations
         }))
       });
     }
@@ -1041,21 +1051,39 @@ async function startServer() {
         }
       }
       
-      // Format entities with freshness metadata
-      const formattedEntities = entities.map(e => {
+      // Format entities with freshness metadata and assembled observations
+      const formattedEntities = [];
+      for (const e of entities) {
         const staleness = computeStalenessMetadata(e);
+        const obsEntities = await kgClient.getObservationsForEntity(e.name, zone);
+
         const result: any = {
           name: e.name,
           entityType: e.entityType,
-          observations: e.observations,
           confidence: staleness.confidence,
           daysSinceLastWrite: staleness.daysSinceLastWrite,
         };
+
         if (staleness.needsReview) {
           result.needsReview = true;
         }
-        return result;
-      });
+
+        if (obsEntities.length > 0) {
+          result.observations = obsEntities.map(obs => {
+            const obsStaleness = computeStalenessMetadata(obs);
+            const obsResult: any = {
+              name: obs.name,
+              confidence: obsStaleness.confidence,
+            };
+            if (obsStaleness.needsReview) {
+              obsResult.needsReview = true;
+            }
+            return obsResult;
+          });
+        }
+
+        formattedEntities.push(result);
+      }
       
       // Get relations between these entities
       const entityNames = formattedEntities.map(e => e.name);
@@ -1138,7 +1166,6 @@ async function startServer() {
           const result: any = {
             name: e.name,
             entityType: e.entityType,
-            observations: e.observations,
             confidence: staleness.confidence,
             daysSinceLastWrite: staleness.daysSinceLastWrite,
           };

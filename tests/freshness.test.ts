@@ -171,9 +171,12 @@ describe('Freshness & Spaced Repetition', () => {
 
   describe('Full spaced repetition lifecycle', () => {
     it('should progress through create → age → review flag → verify → fresh', async () => {
+      // Use a unique name that won't collide with other test entities during search
+      const entityName = 'spacedrepetitionlifecycle';
+
       // 1. Create entity
       const entity = await client.saveEntity({
-        name: 'test-lifecycle',
+        name: entityName,
         entityType: 'test',
         observations: [],
         relevanceScore: 1.0,
@@ -188,7 +191,7 @@ describe('Freshness & Spaced Repetition', () => {
       const twoDaysAgo = new Date(Date.now() - 2 * 24 * 60 * 60 * 1000).toISOString();
       await esClient.update({
         index: indexName,
-        id: 'entity:test-lifecycle',
+        id: `entity:${entityName}`,
         doc: {
           verifiedAt: twoDaysAgo,
           nextReviewAt: new Date(new Date(twoDaysAgo).getTime() + 1 * 24 * 60 * 60 * 1000).toISOString(),
@@ -198,24 +201,24 @@ describe('Freshness & Spaced Repetition', () => {
 
       // 3. Search should show it as needing review
       const searchResults = await client.userSearch({
-        query: 'test-lifecycle',
+        query: entityName,
         zone: TEST_ZONE,
       });
-      const found = searchResults.entities.find(e => e.name === 'test-lifecycle');
+      const found = searchResults.entities.find(e => e.name === entityName);
       expect(found).toBeDefined();
       expect(found!.needsReview).toBe(true);
 
       // 4. Verify the entity
-      const verified = await client.verifyEntity('test-lifecycle', TEST_ZONE);
+      const verified = await client.verifyEntity(entityName, TEST_ZONE);
       expect(verified.verifyCount).toBe(1);
       expect(verified.reviewInterval).toBe(2); // doubled from 1
 
       // 5. Search again — should be fresh now
       const freshResults = await client.userSearch({
-        query: 'test-lifecycle',
+        query: entityName,
         zone: TEST_ZONE,
       });
-      const freshFound = freshResults.entities.find(e => e.name === 'test-lifecycle');
+      const freshFound = freshResults.entities.find(e => e.name === entityName);
       expect(freshFound).toBeDefined();
       expect(freshFound!.confidence).toBe('fresh');
       expect(freshFound!.needsReview).toBeUndefined();
