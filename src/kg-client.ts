@@ -1725,36 +1725,80 @@ export class KnowledgeGraphClient {
   }
   
   /**
-   * Add observations to an existing entity
-   * @param name Entity name
-   * @param observations Array of observation strings to add
-   * @param zone Optional memory zone name, uses defaultZone if not specified
-   * @returns The updated entity
+   * Add observations to an entity.
+   * Each observation becomes a separate entity with an is_observation_of relation.
+   * @param name Parent entity name
+   * @param observations Array of observation strings
+   * @param zone Optional memory zone
+   * @param options Optional overrides
+   * @param options.reviewInterval Review interval for observation entities (default: 7)
    */
-  async addObservations(name: string, observations: string[], zone?: string): Promise<ESEntity> {
+  async addObservations(
+    name: string,
+    observations: string[],
+    zone?: string,
+    options?: { reviewInterval?: number },
+  ): Promise<{ parent: string; created: string[] }> {
     const actualZone = zone || this.defaultZone;
-    
-    // Get existing entity
-    const entity = await this.getEntity(name, actualZone);
-    if (!entity) {
+
+    // Verify parent exists
+    const parent = await this.getEntityWithoutUpdatingLastRead(name, actualZone);
+    if (!parent) {
       throw new Error(`Entity "${name}" not found in zone "${actualZone}"`);
     }
-    
-    // Add new observations to the existing ones
-    const updatedObservations = [
-      ...entity.observations,
-      ...observations
-    ];
-    
-    // Update the entity
-    const updatedEntity = await this.saveEntity({
-      name: entity.name,
-      entityType: entity.entityType,
-      observations: updatedObservations,
-      relevanceScore: entity.relevanceScore
-    }, actualZone);
-    
-    return updatedEntity;
+
+    const created: string[] = [];
+    for (const obs of observations) {
+      const obsName = `${name}: ${obs}`;
+
+      // Create the observation entity
+      await this.saveEntity({
+        name: obsName,
+        entityType: 'observation',
+        observations: [],
+        relevanceScore: parent.relevanceScore,
+        reviewInterval: options?.reviewInterval,
+      }, actualZone);
+
+      // Create the is_observation_of relation
+      await this.saveRelation({
+        from: obsName,
+        to: name,
+        relationType: 'is_observation_of',
+      }, actualZone, actualZone, { autoCreateMissingEntities: false });
+
+      created.push(obsName);
+    }
+
+    return { parent: name, created };
+  }
+
+  /**
+   * Get observation entities for a parent entity.
+   * Returns all entities that have an is_observation_of relation to the given entity.
+   */
+  async getObservationsForEntity(
+    name: string,
+    zone?: string,
+  ): Promise<ESEntity[]> {
+    const actualZone = zone || this.defaultZone;
+
+    // Find all is_observation_of relations pointing to this entity
+    const { relations } = await this.getRelationsForEntities([name], actualZone);
+    const obsRelations = relations.filter(
+      r => r.relationType === 'is_observation_of' && r.to === name
+    );
+
+    // Fetch each observation entity
+    const obsEntities: ESEntity[] = [];
+    for (const rel of obsRelations) {
+      const entity = await this.getEntityWithoutUpdatingLastRead(rel.from, actualZone);
+      if (entity) {
+        obsEntities.push(entity);
+      }
+    }
+
+    return obsEntities;
   }
 
   /**

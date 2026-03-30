@@ -1076,8 +1076,9 @@ async function startServer() {
       const name = params.name;
       const observations = params.observations;
       const zone = params.memory_zone;
-      
-      // Get existing entity
+      const reviewInterval = params.reviewInterval;
+
+      // Verify parent entity exists
       const entity = await kgClient.getEntity(name, zone);
       if (!entity) {
         const zoneMsg = zone ? ` in zone "${zone}"` : "";
@@ -1087,13 +1088,15 @@ async function startServer() {
           message: "Please create the entity before adding observations."
         });
       }
-      
-      // Add observations to the entity
-      const updatedEntity = await kgClient.addObservations(name, observations, zone);
-      
+
+      const result = await kgClient.addObservations(name, observations, zone, {
+        reviewInterval,
+      });
+
       return formatResponse({
         success: true,
-        entity: updatedEntity
+        parent: result.parent,
+        observations_created: result.created,
       });
     }
     else if (toolName === "mark_important") {

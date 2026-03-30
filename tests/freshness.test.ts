@@ -115,6 +115,60 @@ describe('Freshness & Spaced Repetition', () => {
     });
   });
 
+  describe('Observations as entities', () => {
+    beforeAll(async () => {
+      await client.saveEntity({
+        name: 'test-obs-parent',
+        entityType: 'project',
+        observations: [],
+        relevanceScore: 1.0,
+      }, TEST_ZONE);
+    });
+
+    it('should create observation entities with is_observation_of relation', async () => {
+      await client.addObservations(
+        'test-obs-parent',
+        ['uses TypeScript', 'build is broken'],
+        TEST_ZONE,
+      );
+
+      const obs1 = await client.getEntity('test-obs-parent: uses TypeScript', TEST_ZONE);
+      expect(obs1).not.toBeNull();
+      expect(obs1!.entityType).toBe('observation');
+
+      const obs2 = await client.getEntity('test-obs-parent: build is broken', TEST_ZONE);
+      expect(obs2).not.toBeNull();
+      expect(obs2!.entityType).toBe('observation');
+    });
+
+    it('should create is_observation_of relations', async () => {
+      const { relations } = await client.getRelationsForEntities(
+        ['test-obs-parent: uses TypeScript'],
+        TEST_ZONE,
+      );
+
+      const observationRelation = relations.find(
+        r => r.from === 'test-obs-parent: uses TypeScript'
+          && r.to === 'test-obs-parent'
+          && r.relationType === 'is_observation_of'
+      );
+      expect(observationRelation).toBeDefined();
+    });
+
+    it('should accept custom reviewInterval for observations', async () => {
+      await client.addObservations(
+        'test-obs-parent',
+        ['server is down'],
+        TEST_ZONE,
+        { reviewInterval: 1 },
+      );
+
+      const obs = await client.getEntity('test-obs-parent: server is down', TEST_ZONE);
+      expect(obs).not.toBeNull();
+      expect(obs!.reviewInterval).toBe(1);
+    });
+  });
+
   describe('Progressive search with freshness', () => {
     beforeAll(async () => {
       // Create a fresh entity (just created = fresh)
