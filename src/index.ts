@@ -14,6 +14,7 @@ import { KnowledgeGraphClient } from './kg-client.js';
 import { ESEntity, ESRelation, ESSearchParams } from './es-types.js';
 import GroqAI from './ai-service.js';
 import { inspectFile } from './filesystem/index.js';
+import { computeStalenessMetadata } from './freshness.js';
 
 // Environment configuration for Elasticsearch
 const ES_NODE = process.env.ES_NODE || 'http://localhost:9200';
@@ -125,7 +126,7 @@ async function startServer() {
         },
         {
           name: "inspect_knowledge_graph",
-          description: "Agent driven knowledge graph inspection that uses AI to retrieve relevant entities and relations based on a query.",
+          description: "Agent driven knowledge graph inspection that uses AI to retrieve relevant entities and relations. Results include freshness metadata (confidence, needsReview). Treat memory as 'what was believed true at a point in time.' Trust current observations (code, logs, git) over recalled memory when they conflict.",
           inputSchema: {
             type: "object",
             properties: {
@@ -167,7 +168,7 @@ async function startServer() {
         },
         {
           name: "create_entities",
-          description: "Create entities in knowledge graph (memory)",
+          description: "Create entities in knowledge graph (memory). Do NOT store information derivable from source code, git history, or documentation — memory is for context, decisions, and knowledge not in the codebase. Set reviewInterval based on content volatility: stable facts (180-365 days), project state (14-30), volatile state (1-7).",
           inputSchema: {
             type: "object",
             properties: {
@@ -179,9 +180,13 @@ async function startServer() {
                     name: {type: "string", description: "Entity name"},
                     entityType: {type: "string", description: "Entity type"},
                     observations: {
-                      type: "array", 
+                      type: "array",
                       items: {type: "string"},
                       description: "Observations about this entity"
+                    },
+                    reviewInterval: {
+                      type: "integer",
+                      description: "Review interval in days. Short for volatile info (1-7), long for stable facts (180-365). Default: 7."
                     }
                   },
                   required: ["name", "entityType"]
@@ -324,7 +329,7 @@ async function startServer() {
         },
         {
           name: "search_nodes",
-          description: "Search entities using ElasticSearch query syntax. Supports boolean operators (AND, OR, NOT), fuzzy matching (~), phrases (\"term\"), proximity (\"terms\"~N), wildcards (*, ?), and boosting (^N). Examples: 'meeting AND notes', 'Jon~', '\"project plan\"~2'. All searches respect zone isolation.",
+          description: "Search entities using ElasticSearch query syntax. Supports boolean operators (AND, OR, NOT), fuzzy matching (~), phrases (\"term\"), proximity (\"terms\"~N), wildcards (*, ?), and boosting (^N). Results include freshness metadata: check the 'confidence' and 'needsReview' fields. For 'aging' or 'stale' results, verify before acting (e.g., git log --since). If confirmed valid, call verify_entity to refresh the review clock. If wrong, update or delete the entity.",
           inputSchema: {
             type: "object",
             properties: {
@@ -392,7 +397,7 @@ async function startServer() {
         },
         {
           name: "add_observations",
-          description: "Add observations to an existing entity in knowledge graph (memory)",
+          description: "Add observations to an existing entity. Each observation becomes a separate entity with its own freshness lifecycle, linked via is_observation_of relation. Do NOT store information derivable from source code, git history, or documentation. Set reviewInterval based on volatility.",
           inputSchema: {
             type: "object",
             properties: {
@@ -404,6 +409,10 @@ async function startServer() {
                 type: "array",
                 items: {type: "string"},
                 description: "Observations to add to the entity"
+              },
+              reviewInterval: {
+                type: "integer",
+                description: "Review interval in days for observation entities. Short for volatile info (1-7), long for stable facts (180-365). Default: 7."
               },
               memory_zone: {
                 type: "string",
@@ -636,6 +645,30 @@ async function startServer() {
           }
         },
         {
+          name: "verify_entity",
+          description: "Explicitly verify that an entity's information is still accurate. This refreshes the review clock via spaced repetition — the review interval doubles (capped at 365 days). Call this after confirming a needsReview entity is still valid (e.g., via git log, reading code, asking the user). Set reviewInterval based on content volatility: stable facts (names, architecture) → 180-365 days; project state → 14-30 days; volatile state (build status, active bugs) → 1-7 days. If the information is WRONG, use update_entities or delete_entities instead.",
+          inputSchema: {
+            type: "object",
+            properties: {
+              name: {
+                type: "string",
+                description: "Entity name to verify"
+              },
+              memory_zone: {
+                type: "string",
+                description: "Memory zone where the entity is stored."
+              },
+              reviewInterval: {
+                type: "integer",
+                description: "Optional override for review interval in days. If not provided, the current interval is doubled (capped at 365)."
+              }
+            },
+            required: ["name", "memory_zone"],
+            additionalProperties: false,
+            "$schema": "http://json-schema.org/draft-07/schema#"
+          }
+        },
+        {
           name: "get_time_utc",
           description: "Get the current UTC time in YYYY-MM-DD hh:mm:ss format",
           inputSchema: {
@@ -807,7 +840,8 @@ async function startServer() {
           name: entity.name,
           entityType: entity.entityType,
           observations: entity.observations,
-          relevanceScore: entity.relevanceScore ?? 1.0
+          relevanceScore: entity.relevanceScore ?? 1.0,
+          reviewInterval: entity.reviewInterval,
         }, zone);
         
         createdEntities.push(savedEntity);
@@ -1007,12 +1041,21 @@ async function startServer() {
         }
       }
       
-      // Format entities
-      const formattedEntities = entities.map(e => ({
-        name: e.name,
-        entityType: e.entityType,
-        observations: e.observations
-      }));
+      // Format entities with freshness metadata
+      const formattedEntities = entities.map(e => {
+        const staleness = computeStalenessMetadata(e);
+        const result: any = {
+          name: e.name,
+          entityType: e.entityType,
+          observations: e.observations,
+          confidence: staleness.confidence,
+          daysSinceLastWrite: staleness.daysSinceLastWrite,
+        };
+        if (staleness.needsReview) {
+          result.needsReview = true;
+        }
+        return result;
+      });
       
       // Get relations between these entities
       const entityNames = formattedEntities.map(e => e.name);
@@ -1087,11 +1130,20 @@ async function startServer() {
       const recentEntities = await kgClient.getRecentEntities(limit, includeObservations, zone);
       
       return formatResponse({
-        entities: recentEntities.map(e => ({
-          name: e.name,
-          entityType: e.entityType,
-          observations: e.observations
-        })),
+        entities: recentEntities.map(e => {
+          const staleness = computeStalenessMetadata(e);
+          const result: any = {
+            name: e.name,
+            entityType: e.entityType,
+            observations: e.observations,
+            confidence: staleness.confidence,
+            daysSinceLastWrite: staleness.daysSinceLastWrite,
+          };
+          if (staleness.needsReview) {
+            result.needsReview = true;
+          }
+          return result;
+        }),
         total: recentEntities.length
       });
     }
@@ -1322,6 +1374,35 @@ async function startServer() {
         return formatResponse({
           success: false,
           error: `Error getting zone stats: ${(error as Error).message}`
+        });
+      }
+    }
+    else if (toolName === "verify_entity") {
+      const name = params.name;
+      const zone = params.memory_zone;
+      const reviewInterval = params.reviewInterval;
+
+      try {
+        const entity = await kgClient.verifyEntity(name, zone, {
+          reviewInterval,
+        });
+
+        const staleness = computeStalenessMetadata(entity);
+
+        return formatResponse({
+          success: true,
+          entity: {
+            name: entity.name,
+            confidence: staleness.confidence,
+            reviewInterval: entity.reviewInterval,
+            verifyCount: entity.verifyCount,
+            nextReviewAt: entity.nextReviewAt,
+          },
+        });
+      } catch (error) {
+        return formatResponse({
+          success: false,
+          error: (error as Error).message,
         });
       }
     }
