@@ -21,9 +21,9 @@
     "test:relevance-score": "node tests/test-relevance-score.js",
     "import": "node dist/json-to-es.js import",
     "export": "node dist/json-to-es.js export",
-    "es:start": "docker-compose up -d",
-    "es:stop": "docker-compose down",
-    "es:reset": "docker-compose down -v && docker-compose up -d"
+    "es:start": "docker compose up -d",
+    "es:stop": "docker compose down",
+    "es:reset": "docker compose down -v && docker compose up -d"
   },
   "dependencies": {
     "@elastic/elasticsearch": "^8.12.0",
