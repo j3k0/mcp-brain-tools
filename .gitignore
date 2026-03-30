@@ -21,3 +21,17 @@ manual-tests/
 dolphin-mcp.log
 package-lock.json
 dolphin-test.json
+
+# Machine-local configs
+.mcp.json
+.cursorrules
+.claude/
+
+# Backup data
+backups/
+mcp-server-backup*.json
+memory-*.json
+
+# Local scripts
+elastic-memory
+elastic-memory-backup
