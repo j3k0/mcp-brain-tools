@@ -114,6 +114,77 @@ describe('Freshness & Spaced Repetition', () => {
       ).rejects.toThrow('not found');
     });
   });
+
+  describe('Progressive search with freshness', () => {
+    beforeAll(async () => {
+      // Create a fresh entity (just created = fresh)
+      await client.saveEntity({
+        name: 'recentconcept',
+        entityType: 'concept',
+        observations: [],
+        relevanceScore: 1.0,
+      }, TEST_ZONE);
+
+      // Create an entity that simulates being overdue for review
+      await client.saveEntity({
+        name: 'outdatedknowledge',
+        entityType: 'concept',
+        observations: [],
+        relevanceScore: 1.0,
+        reviewInterval: 1, // 1 day interval
+      }, TEST_ZONE);
+
+      // Manually backdate verifiedAt to make it stale (30 days ago)
+      const esClient = (client as any).client;
+      const indexName = `knowledge-graph@${TEST_ZONE}`;
+      const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString();
+      await esClient.update({
+        index: indexName,
+        id: `entity:outdatedknowledge`,
+        doc: {
+          verifiedAt: thirtyDaysAgo,
+          nextReviewAt: new Date(new Date(thirtyDaysAgo).getTime() + 1 * 24 * 60 * 60 * 1000).toISOString(),
+        },
+        refresh: true,
+      });
+    });
+
+    it('should include confidence and needsReview in search results', async () => {
+      const results = await client.userSearch({
+        query: 'recentconcept',
+        zone: TEST_ZONE,
+      });
+
+      const freshEntity = results.entities.find(e => e.name === 'recentconcept');
+      expect(freshEntity).toBeDefined();
+      expect(freshEntity!.confidence).toBe('fresh');
+      expect(freshEntity!.needsReview).toBeUndefined();
+    });
+
+    it('should include daysSinceLastWrite in search results', async () => {
+      const results = await client.userSearch({
+        query: 'recentconcept',
+        zone: TEST_ZONE,
+      });
+
+      const freshEntity = results.entities.find(e => e.name === 'recentconcept');
+      expect(freshEntity).toBeDefined();
+      expect(typeof freshEntity!.daysSinceLastWrite).toBe('number');
+      expect(freshEntity!.daysSinceLastWrite).toBeLessThan(1);
+    });
+
+    it('should find stale entities via progressive widening when no fresh results', async () => {
+      const results = await client.userSearch({
+        query: 'outdatedknowledge',
+        zone: TEST_ZONE,
+      });
+
+      const staleEntity = results.entities.find(e => e.name === 'outdatedknowledge');
+      expect(staleEntity).toBeDefined();
+      expect(staleEntity!.needsReview).toBe(true);
+      expect(staleEntity!.confidence).toBe('archival');
+    });
+  });
 });
 
 describe('Freshness computation', () => {

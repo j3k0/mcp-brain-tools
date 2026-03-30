@@ -26,6 +26,7 @@ interface ZoneMetadata {
 
 // Import the AI service
 import GroqAI from './ai-service.js';
+import { computeStalenessMetadata } from './freshness.js';
 
 /**
  * Knowledge Graph Client
@@ -2396,9 +2397,12 @@ export class KnowledgeGraphClient {
     entities: Array<{
       name: string;
       entityType: string;
-      observations?: string[];
+      observations?: any[];
       lastRead?: string;
       lastWrite?: string;
+      confidence: string;
+      needsReview?: true;
+      daysSinceLastWrite: number;
     }>;
     relations: Array<{
       from: string;
@@ -2436,30 +2440,45 @@ export class KnowledgeGraphClient {
     // Perform the raw search
     const results = await this.search(searchParams);
     
-    // Transform the results to a clean format, removing unnecessary fields
-    const entities = results.hits.hits
+    // Transform results and enrich with freshness metadata
+    const allEntities = results.hits.hits
       .filter(hit => hit._source.type === 'entity')
       .map(hit => {
-        const entity: {
-          name: string;
-          entityType: string;
-          observations?: string[];
-          lastRead?: string;
-          lastWrite?: string;
-        } = {
-          name: (hit._source as ESEntity).name,
-          entityType: (hit._source as ESEntity).entityType,
+        const src = hit._source as ESEntity;
+        const staleness = computeStalenessMetadata(src);
+        const freshness = 1 - ((Date.now() - new Date(src.verifiedAt).getTime()) / (1000 * 60 * 60 * 24) / src.reviewInterval);
+
+        const entity: any = {
+          name: src.name,
+          entityType: src.entityType,
+          confidence: staleness.confidence,
+          daysSinceLastWrite: staleness.daysSinceLastWrite,
+          _freshness: freshness, // internal, stripped before return
         };
-        
-        // Only include observations and timestamps if requested
-        if (includeObservations) {
-          entity.observations = (hit._source as ESEntity).observations;
-          entity.lastWrite = (hit._source as ESEntity).lastWrite;
-          entity.lastRead = (hit._source as ESEntity).lastRead;
+
+        if (staleness.needsReview) {
+          entity.needsReview = true;
         }
-        
+
+        if (includeObservations) {
+          entity.observations = src.observations;
+          entity.lastWrite = src.lastWrite;
+          entity.lastRead = src.lastRead;
+        }
+
         return entity;
       });
+
+    // Progressive freshness filtering:
+    //   Pass 1: freshness >= 0 (fresh + normal)
+    //   Pass 2: freshness >= -2 (adds aging + stale)
+    //   Pass 3: no filter (adds archival)
+    const thresholds = [0, -2, -Infinity];
+    let entities: typeof allEntities = [];
+    for (const threshold of thresholds) {
+      entities = allEntities.filter(e => e._freshness >= threshold);
+      if (entities.length > 0) break;
+    }
     
     // Apply AI filtering if informationNeeded is provided and AI is available
     let filteredEntities = entities;
@@ -2530,9 +2549,12 @@ export class KnowledgeGraphClient {
       toZone: r.toZone
     }));
     
-    return { 
-      entities: filteredEntities, 
-      relations: formattedRelations 
+    // Strip internal fields before returning
+    const cleanEntities = filteredEntities.map(({ _freshness, ...rest }: any) => rest);
+
+    return {
+      entities: cleanEntities,
+      relations: formattedRelations
     };
   }
 } 
