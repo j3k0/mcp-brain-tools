@@ -9,7 +9,7 @@
     "start": "node dist/index.js",
     "dev": "tsc -p tsconfig.json --watch & node --watch dist/index.js",
     "test": "npm run test:js",
-    "test:jest": "npx jest",
+    "test:jest": "npx jest --config jest.config.cjs --forceExit",
     "test:coverage": "npx jest --coverage",
     "test:watch": "npx jest --watch",
     "test:js": "npm run test:cross-zone && npm run test:empty-name && npm run test:non-existent && npm run test:js:relationship && npm run test:zone-management && npm run test:relevance-score",
