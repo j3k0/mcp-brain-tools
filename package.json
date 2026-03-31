@@ -1,8 +1,17 @@
 {
-  "name": "mcp-memory",
-  "version": "0.1.0",
-  "description": "Knowledge Graph Memory using Elasticsearch for MCP",
+  "name": "mcp-brain-tools",
+  "version": "1.0.0",
+  "description": "MCP memory server with spaced repetition freshness tracking, backed by Elasticsearch",
   "main": "dist/index.js",
+  "bin": {
+    "mcp-brain-tools": "dist/index.js"
+  },
+  "files": [
+    "dist",
+    "docker-compose.yml",
+    "README.md",
+    "LICENSE"
+  ],
   "type": "module",
   "scripts": {
     "build": "tsc -p tsconfig.json",
@@ -42,13 +51,16 @@
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/j3k/mcp-memory.git"
+    "url": "git+https://github.com/j3k/mcp-brain-tools.git"
   },
   "keywords": [
     "mcp",
     "knowledge-graph",
     "elasticsearch",
-    "memory"
+    "memory",
+    "spaced-repetition",
+    "freshness",
+    "ai-memory"
   ],
   "author": "Jean-Christophe Hoelt",
   "license": "MIT"
