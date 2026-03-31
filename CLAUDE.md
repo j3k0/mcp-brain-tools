@@ -1,4 +1,6 @@
-# MCP Knowledge Graph Memory Server Commands & Style Guide
+# mcp-brain-tools — Commands & Style Guide
+- **npm package**: `mcp-brain-tools` (v1.0.0)
+- **repo**: `github.com/j3k0/mcp-brain-tools`
 
 ## Build & Test Commands
 - Build: `npm run build`
