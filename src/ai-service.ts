@@ -27,9 +27,8 @@ function getModels() {
     return process.env.GROQ_MODELS.split(',').map(x => x.trim()).filter(x => x);
   }
   return [
-    'deepseek-r1-distill-llama-70b',
+    'openai/gpt-oss-120b',
     'llama-3.3-70b-versatile',
-    'llama-3.3-70b-specdec'
   ]
 }
 
