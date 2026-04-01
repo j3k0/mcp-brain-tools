@@ -785,7 +785,14 @@ async function startServer() {
     else if (toolName === "create_entities") {
       const entities = params.entities;
       const zone = params.memory_zone;
-      
+
+      if (!Array.isArray(entities)) {
+        return formatResponse({
+          success: false,
+          error: `'entities' must be a JSON array, not a ${typeof entities}. Pass it as a structured array directly — do not JSON.stringify it.`
+        });
+      }
+
       // First, check if any entities already exist or have empty names
       const conflictingEntities = [];
       const invalidEntities = [];

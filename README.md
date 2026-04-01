@@ -56,6 +56,33 @@ Add to your Claude Code, Claude Desktop, or other MCP client config:
 
 `GROQ_API_KEY` is optional — enables AI-powered search filtering and zone relevance scoring.
 
+### Install the auto-memory hook (Claude Code only)
+
+The memory hook runs on every user message and automatically injects relevant context — no agent cooperation needed.
+
+Add to `~/.claude/settings.json`:
+
+```json
+{
+  "hooks": {
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node /path/to/mcp-brain-tools/dist/memory-hook.js"
+          }
+        ]
+      }
+    ]
+  }
+}
+```
+
+The hook uses the same `ES_NODE`, `AI_API_KEY`/`GROQ_API_KEY`, `AI_API_BASE`, and `AI_MODEL` env vars (set them in the `env` block of your settings, or export them in your shell profile).
+
+`AI_API_BASE` defaults to Groq's endpoint but accepts any OpenAI-compatible API URL.
+
 ## How it works
 
 ### Entities and observations
@@ -127,6 +154,35 @@ This keeps results clean while ensuring nothing is permanently lost.
 | `KG_INDEX_PREFIX` | `knowledge-graph` | Elasticsearch index prefix |
 | `KG_DEFAULT_ZONE` | `default` | Default memory zone |
 | `DEBUG` | `false` | Enable debug logging |
+
+## Recommended agent instructions
+
+For agents to actively use the memory server, add something like this to your `CLAUDE.md` (or equivalent instructions file):
+
+```markdown
+## Memory
+
+Use MCP Memory (`mcp__memory__*` tools) — a shared knowledge graph across all agents, projects, and computers.
+
+**When to SAVE (immediately, before moving on):**
+- Something you tried didn't work (non-transient) → save what failed and why, so no agent repeats it
+- A decision was made (architectural, design, workflow) → save the decision and the reason
+- The user corrects you or gives explicit instructions → save the rule
+- You learn something non-obvious that took effort to discover → save it
+
+**When to SEARCH (before starting, not after failing):**
+- **At the start of every non-trivial task** — search before thinking, not after hitting a wall
+- About to try an approach that might have been attempted before → search first
+- User references something from a past session → search before asking
+
+**Rules:**
+- Skip anything easy to find in code, git log, or docs
+- Use the project name as the zone for project-specific knowledge; `default` for general knowledge
+- Keep entries short — the AI filters server-side, so be generous rather than selective
+- Short `reviewInterval` (e.g. 3–7 days) for volatile facts; longer (30–180) for stable ones
+```
+
+The key insight: agents need explicit trigger-based instructions ("when X, do Y"), not just descriptions of what the tool does.
 
 ## Development
 
