@@ -71,16 +71,19 @@ async function readRecentTranscript(transcriptPath: string, nLines: number): Pro
     for (const line of recent) {
       try {
         const entry = JSON.parse(line);
-        if (entry.role !== 'user' && entry.role !== 'assistant') continue;
-        const text = typeof entry.content === 'string'
-          ? entry.content
-          : Array.isArray(entry.content)
-            ? entry.content
+        const msg = entry.message;
+        if (!msg) continue;
+        const role = msg.role;
+        if (role !== 'user' && role !== 'assistant') continue;
+        const text = typeof msg.content === 'string'
+          ? msg.content
+          : Array.isArray(msg.content)
+            ? msg.content
                 .filter((c: any) => c.type === 'text')
                 .map((c: any) => c.text)
                 .join(' ')
             : '';
-        if (text) messages.push(`${entry.role}: ${text.slice(0, 300)}`);
+        if (text) messages.push(`${role}: ${text.slice(0, 300)}`);
       } catch {
         // skip malformed lines
       }

@@ -21,7 +21,15 @@
  *   MEMORY_SAVE_MIN_ASSISTANT_WORDS  Skip if assistant response < N words (default: 20)
  */
 
-import { readFile } from 'fs/promises';
+import { readFile, appendFile } from 'fs/promises';
+import { homedir } from 'os';
+
+const LOG_FILE = `${homedir()}/.claude/memory-save-hook.log`;
+
+async function log(msg: string): Promise<void> {
+  const line = `${new Date().toISOString()} ${msg}\n`;
+  await appendFile(LOG_FILE, line).catch(() => {});
+}
 
 // --- Config ---
 const ES_NODE = process.env.ES_NODE || 'http://localhost:9200';
@@ -62,13 +70,38 @@ async function readRecentTranscript(transcriptPath: string, nLines: number): Pro
     for (const line of lines) {
       try {
         const entry = JSON.parse(line);
-        if (entry.role !== 'user' && entry.role !== 'assistant') continue;
-        const text = typeof entry.content === 'string'
-          ? entry.content
-          : Array.isArray(entry.content)
-            ? entry.content.filter((c: any) => c.type === 'text').map((c: any) => c.text).join(' ')
-            : '';
-        if (text.trim()) messages.push({ role: entry.role, text: text.slice(0, 500) });
+        const msg = entry.message;
+        if (!msg) continue;
+        const role = msg.role;
+        if (role !== 'user' && role !== 'assistant') continue;
+
+        const parts: string[] = [];
+        const blocks = Array.isArray(msg.content) ? msg.content : [];
+
+        for (const block of blocks) {
+          if (block.type === 'text' && block.text?.trim()) {
+            parts.push(block.text.trim().slice(0, 400));
+          } else if (block.type === 'tool_use') {
+            // Include tool name + key input fields
+            const inputSummary = JSON.stringify(block.input || {}).slice(0, 300);
+            parts.push(`[tool_use: ${block.name} ${inputSummary}]`);
+          } else if (block.type === 'tool_result') {
+            const resultText = typeof block.content === 'string'
+              ? block.content
+              : Array.isArray(block.content)
+                ? block.content.filter((c: any) => c.type === 'text').map((c: any) => c.text).join(' ')
+                : '';
+            if (resultText.trim()) parts.push(`[tool_result: ${resultText.trim().slice(0, 300)}]`);
+          }
+        }
+
+        // Also handle plain string content
+        if (typeof msg.content === 'string' && msg.content.trim()) {
+          parts.push(msg.content.trim().slice(0, 400));
+        }
+
+        const text = parts.join('\n');
+        if (text.trim()) messages.push({ role, text });
       } catch { /* skip */ }
     }
     return messages;
@@ -209,7 +242,7 @@ interface SaveDecision {
   verify: string[];
 }
 
-async function analyseExchange(messages: Message[], existingNames: string[]): Promise<SaveDecision> {
+async function analyseExchange(messages: Message[], existingNames: string[], projectName: string, cwd: string): Promise<SaveDecision> {
   if (!AI_API_KEY) return { save: [], verify: [] };
 
   const exchange = messages.map(m => `${m.role.toUpperCase()}: ${m.text}`).join('\n\n');
@@ -218,6 +251,8 @@ async function analyseExchange(messages: Message[], existingNames: string[]): Pr
     : 'Memory is currently empty for this topic.';
 
   const systemPrompt = `You analyse a conversation exchange and decide what to persist in a knowledge graph memory.
+
+Current project: ${projectName} (${cwd})
 
 SAVE when the exchange reveals:
 - A mistake or failed approach (and why it failed)
@@ -231,6 +266,10 @@ DO NOT SAVE:
 - Ephemeral task state or in-progress work
 - Things already covered by the existing memory entries listed below
 - Obvious facts or general programming knowledge
+
+Entity naming: names must be specific enough to be unambiguous across projects.
+Prefix with the project name when the knowledge is project-specific (e.g. "mcp-brain-tools: JSONL transcript format").
+Use generic names only for universal facts.
 
 For reviewInterval: 1-7 (volatile/task-specific), 14-30 (project state), 90-365 (stable facts/preferences).
 
@@ -286,29 +325,40 @@ async function main() {
     if (!raw.trim()) return;
 
     const input = JSON.parse(raw);
-    const { transcript_path } = input;
-    if (!transcript_path) return;
+    const { transcript_path, cwd } = input;
+    await log(`FIRED: event=${input.hook_event_name || 'Stop'} transcript=${transcript_path ? 'yes' : 'no'} cwd=${cwd || 'none'}`);
+    if (!transcript_path) { await log('SKIP: no transcript_path'); return; }
+
+    await log(`TRANSCRIPT PATH: ${transcript_path}`);
+    try {
+      const raw = await readFile(transcript_path, 'utf8');
+      const lines = raw.trim().split('\n').filter(Boolean);
+      await log(`TRANSCRIPT: ${lines.length} lines, first line sample: ${lines[0]?.slice(0, 120)}`);
+    } catch (e: any) { await log(`TRANSCRIPT READ ERROR: ${e?.message}`); }
 
     const messages = await readRecentTranscript(transcript_path, TRANSCRIPT_LINES);
-    if (messages.length === 0) return;
+    if (messages.length === 0) { await log('SKIP: no messages in transcript'); return; }
 
-    // Skip if the assistant barely said anything
-    const lastAssistant = [...messages].reverse().find(m => m.role === 'assistant');
-    if (!lastAssistant) return;
-    const wordCount = lastAssistant.text.trim().split(/\s+/).length;
-    if (wordCount < MIN_ASSISTANT_WORDS) return;
+    // Skip if total exchange is too thin to contain anything worth saving
+    const totalWords = messages.reduce((sum, m) => sum + m.text.trim().split(/\s+/).length, 0);
+    if (totalWords < MIN_ASSISTANT_WORDS) { await log(`SKIP: exchange too short (${totalWords} total words)`); return; }
 
-    // Determine zone
+    // Determine zone from cwd (project name = last path component)
     const zonesEnv = process.env.MEMORY_HOOK_ZONES;
-    const zone = zonesEnv ? zonesEnv.split(',')[0].trim() : KG_DEFAULT_ZONE;
+    const projectName = cwd ? cwd.split('/').filter(Boolean).pop() || KG_DEFAULT_ZONE : KG_DEFAULT_ZONE;
+    const zone = zonesEnv ? zonesEnv.split(',')[0].trim() : projectName;
     const index = getIndexName(zone);
+
+    await log(`ANALYSE: ${messages.length} messages, zone=${zone} project=${projectName}`);
 
     // Search for related existing entities
     const combinedText = messages.map(m => m.text).join(' ').slice(0, 400);
     const existingNames = await searchExisting(index, combinedText);
+    await log(`EXISTING: ${existingNames.length} related entities found`);
 
     // Ask AI what to save
-    const decision = await analyseExchange(messages, existingNames);
+    const decision = await analyseExchange(messages, existingNames, projectName, cwd || '');
+    await log(`DECISION: save=${decision.save.length} verify=${decision.verify.length}`);
 
     // Save new entities
     for (const entity of decision.save) {
@@ -320,6 +370,9 @@ async function main() {
           entityType: entity.entityType || 'Concept',
           reviewInterval: entity.reviewInterval || 7,
         });
+        await log(`SAVED entity: ${entity.name}`);
+      } else {
+        await log(`SKIP entity (exists): ${entity.name}`);
       }
       for (const obs of (entity.observations || [])) {
         if (!obs?.trim()) continue;
@@ -327,6 +380,7 @@ async function main() {
         const obsExists = await getEntity(index, obsName);
         if (!obsExists) {
           await saveObservation(index, zone, entity.name, obs, entity.reviewInterval || 7);
+          await log(`SAVED obs: ${obsName.slice(0, 80)}`);
         }
       }
     }
@@ -334,10 +388,11 @@ async function main() {
     // Verify confirmed entities
     for (const name of decision.verify) {
       await verifyEntityInES(index, name);
+      await log(`VERIFIED: ${name}`);
     }
 
-  } catch {
-    // Silent failure — never break the conversation
+  } catch (err: any) {
+    await log(`ERROR: ${err?.message || err}`);
   }
 }
 
