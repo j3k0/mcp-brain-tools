@@ -263,11 +263,13 @@ async function fetchObservations(index: string, entityNames: string[]): Promise<
 // --- Format entities as context block ---
 function formatBlock(entities: any[], observations: Record<string, string[]>, zone: string): string {
   const lines = entities.map(e => {
+    const freshness = computeFreshness(e);
+    const staleMarker = freshness < 0 ? ' ⚠ needs review' : '';
     const obs = observations[e.name];
     const obsPart = obs && obs.length > 0
       ? '\n' + obs.slice(0, 3).map(o => `    - ${o}`).join('\n')
       : '';
-    return `  - **${e.name}** (${e.entityType})${obsPart}`;
+    return `  - **${e.name}** (${e.entityType}${staleMarker})${obsPart}`;
   });
   return `<memory zone="${zone}">\n${lines.join('\n')}\n</memory>`;
 }
